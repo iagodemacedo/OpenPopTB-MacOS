@@ -1,5 +1,16 @@
 # OpenPopTB-MacOS
 
+<p align="center">
+  <img src="docs/media/demo.webp" width="640" alt="Populous: The Beginning running natively on an Apple Silicon Mac (Rolling Demo)">
+</p>
+
+<p align="center">
+  <img src="docs/media/menu.png" width="32%" alt="Main menu">
+  <img src="docs/media/gameplay.png" width="32%" alt="Gameplay">
+  <img src="docs/media/undiscovered-worlds.png" width="32%" alt="Undiscovered Worlds">
+</p>
+<p align="center"><sub>Captured from the native arm64 build (original 640x480 software renderer).</sub></p>
+
 A native **Apple Silicon (arm64) macOS** port of **Populous: The Beginning** (1998) and its expansion
 **Undiscovered Worlds**, built by **statically recompiling** the original Windows executables into C and
 running them on a small reimplementation of the Win32/DirectX APIs on top of [SDL3](https://libsdl.org).
