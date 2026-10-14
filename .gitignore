@@ -1,0 +1,23 @@
+# Derived from the game executables or from builds: never commit
+gen/
+gen_uw/
+build*/
+dist/
+out/
+re/bin/
+re/proj/
+re/snap/
+re/export/decomp.c
+re/export/strings.tsv
+re/analyze*
+re/export.log
+*.snap
+*.trace
+dump.txt
+
+# local tooling
+.venv/
+.cache/
+compile_commands.json
+.DS_Store
+__pycache__/
