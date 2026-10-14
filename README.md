@@ -113,4 +113,5 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ROADMAP.md](docs/ROADMAP
   future prebuilt apps recompile the player's own copy on first launch.
 
 ## License
-[MIT](LICENSE) for the contents of this repository.
+[MIT](LICENSE) for the contents of this repository. The license does not cover Populous: The Beginning,
+its executables, libraries or data files, nor any code generated from them by this software.
