@@ -21,3 +21,6 @@ dump.txt
 compile_commands.json
 .DS_Store
 __pycache__/
+
+# local writing, never published
+post/
