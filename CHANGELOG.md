@@ -4,9 +4,22 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
-### Planned
-- v0.2.0: downloadable `.app` that recompiles the player's own copy on first launch (no game code
-  in the release). See docs/ROADMAP.md, item 0.
+
+## [0.1.1] - 2026-10-14
+### Added
+- Prebuilt download (`OpenPopTB-MacOS-0.1.1.zip`): the apps contain no game code; on first launch
+  they recompile the player's own copy (about a minute; 40 s measured on a 15-core M-series Mac)
+  and cache the result. Needs Apple's Command Line Tools, which the app offers to install. Built
+  and attached to GitHub releases by CI.
+- The app accepts the GOG offline installer directly (unpacked with a bundled innoextract), besides
+  an already extracted or installed game folder. Also `--installer <setup.exe>` on the command
+  line and in `build.sh`.
+- `tools/package_release.sh` and `.github/workflows/release.yml`.
+
+### Changed
+- Generated tables are named `gen_fn_table`/`gen_import_table`; the runtime reaches them through
+  pointers so the same code works linked in or loaded from a bundle. Regenerate `gen*/` (build.sh
+  always does).
 
 ## [0.1.0] - 2026-10-14
 First public version.

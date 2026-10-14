@@ -1,0 +1,40 @@
+# Builds the downloadable app and attaches it to the GitHub release.
+# The CI never sees game files: the apps contain only the runtime and the recompiler, and recompile
+# the player's own copy on first launch (runtime/prepare.c).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    # Homebrew bottles target the runner's macOS, which sets the app's minimum macOS version
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: brew install cmake ninja sdl3 innoextract
+      - name: Package
+        run: tools/package_release.sh
+      - name: Show what was packaged
+        run: |
+          APP="dist/release/Populous TB.app"
+          plutil -p "$APP/Contents/Info.plist" | grep -E "LSMinimumSystemVersion|CFBundleShortVersionString"
+          "$APP/Contents/MacOS/innoextract" --version | head -1
+          ls "$APP/Contents/Resources/recomp" "$APP/Contents/Resources/include"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenPopTB-MacOS
+          path: dist/OpenPopTB-MacOS-*.zip
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md"
+          gh release upload "$GITHUB_REF_NAME" dist/OpenPopTB-MacOS-*.zip --clobber

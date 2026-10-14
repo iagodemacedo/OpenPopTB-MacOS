@@ -30,6 +30,13 @@ const char *g_exe_name = POPTB_EXE;
 const char *g_shot_path, *g_shot_dir; int g_shot_frame = 60, g_shot_every;
 void plat_script(const char *spec);
 uint32_t g_hwnd, g_wndproc;
+const FnEntry *fn_table;
+int fn_table_len;
+const ImportEntry *import_table;
+int import_table_len;
+int prep_choose_game(const char *exe, char *root, size_t n);
+int prep_from_installer(const char *exe, const char *setup, char *root, size_t n);
+int prep_load_game(const char *root, const char *exe);
 
 static uint8_t *read_file(const char *p, size_t *n) {
     FILE *f = fopen(p, "rb");
@@ -148,6 +155,7 @@ static void config_path(char *out, size_t n) {
     snprintf(out, n, "%s/Library/Application Support/OpenPopTB", home ? home : ".");
 }
 // order: --data/POPTB_DATA, saved path, folder next to the .app, current directory, ask the user
+// (folder or GOG installer)
 static int find_data_dir(const char *given) {
     char cand[1100] = "";
     char cfg[1024]; config_path(cfg, sizeof cfg);
@@ -169,18 +177,11 @@ static int find_data_dir(const char *given) {
         if (has_game(real)) { snprintf(g_root, sizeof g_root, "%s", real); goto ok; }
     }
     if (has_game(".")) { realpath(".", g_root); goto ok; }
-    {
-        // ask with the native folder picker
-        FILE *pp = popen("osascript -e 'POSIX path of (choose folder with prompt \"Choose the Populous: The Beginning folder (where popTB.exe is)\")' 2>/dev/null", "r");
-        if (!pp) return 0;
-        cand[0] = 0;
-        if (fgets(cand, sizeof cand, pp)) cand[strcspn(cand, "\r\n")] = 0;
-        pclose(pp);
-        size_t l = strlen(cand); if (l > 1 && cand[l - 1] == '/') cand[l - 1] = 0;
-        if (!cand[0] || !has_game(cand)) return 0;
-        realpath(cand, g_root);
-    }
+    // ask: game folder or GOG installer (runtime/prepare.c)
+    if (!prep_choose_game(POPTB_EXE, cand, sizeof cand)) return 0;
+    realpath(cand, g_root);
 ok:
+    for (char *c = cfg + 1; *c; c++) if (*c == '/') { *c = 0; mkdir(cfg, 0755); *c = '/'; }   // mkdir -p
     mkdir(cfg, 0755);
     f = fopen(cf, "w");
     if (f) { fprintf(f, "%s\n", g_root); fclose(f); }
@@ -188,9 +189,10 @@ ok:
 }
 
 int main(int argc, char **argv) {
-    const char *data = NULL, *script_spec = NULL;
+    const char *data = NULL, *script_spec = NULL, *installer = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
+        else if (!strcmp(argv[i], "--installer") && i + 1 < argc) installer = argv[++i];
         else if (!strcmp(argv[i], "-v")) rt_verbose = 1;
         else if (!strcmp(argv[i], "-vv")) rt_verbose = 2;
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_shot_path = argv[++i];
@@ -201,12 +203,23 @@ int main(int argc, char **argv) {
         else { strncat(g_cmdline, " ", sizeof g_cmdline - strlen(g_cmdline) - 1); strncat(g_cmdline, argv[i], sizeof g_cmdline - strlen(g_cmdline) - 1); }
     }
     if (!data) data = getenv("POPTB_DATA");
+    // unpacks the GOG installer into Application Support and uses that copy from then on
+    static char unpacked[1100];
+    if (installer && !data) {
+        if (!prep_from_installer(POPTB_EXE, installer, unpacked, sizeof unpacked)) return 1;
+        data = unpacked;
+    }
     if (!find_data_dir(data)) {
         fprintf(stderr, "popTB.exe not found (use --data <game folder>)\n");
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Populous: The Beginning",
-            "Could not find the game files (popTB.exe).\nOpen the app again and choose the installation folder (GOG).", NULL);
         return 1;
     }
+#ifdef POPTB_PREBUILT
+    // prebuilt app: the game code is recompiled from the player's copy on first launch, then cached
+    if (!prep_load_game(g_root, POPTB_EXE)) return 1;
+#else
+    fn_table = gen_fn_table; fn_table_len = gen_fn_table_len;
+    import_table = gen_import_table; import_table_len = gen_import_table_len;
+#endif
     char exe[1100]; snprintf(exe, sizeof exe, "%s/%s", g_root, POPTB_EXE);
     struct stat st;
     chdir(g_root);

@@ -649,7 +649,8 @@ def main():
     total_unknown = collections.Counter()
     gens = []
     for spec in specs:
-        path, _, tsv = spec.partition(':')
+        path, _, tsv = spec.rpartition(':')
+        if not tsv.endswith('.tsv'): path, tsv = spec, ''   # a ':' inside the path, no seeds
         img = Image(path, tsv or None)
         entries, funcs, tables, bad, allins = discover_all(img)
         g = Gen(img, entries, funcs, tables)
@@ -676,13 +677,13 @@ def main():
         with open(os.path.join(outdir, 'f%02d.c' % fi), 'w') as fh:
             fh.write('\n'.join(out) + '\n')
     with open(os.path.join(outdir, 'table.c'), 'w') as fh:
-        fh.write('#include "funcs.h"\n#include "table.h"\nconst FnEntry fn_table[] = {\n')
+        fh.write('#include "funcs.h"\n#include "table.h"\nconst FnEntry gen_fn_table[] = {\n')
         for k, _ in allfuncs: fh.write('  {0x%xu, f_%x},\n' % (k, k))
-        fh.write('};\nconst int fn_table_len = %d;\n' % len(allfuncs))
-        fh.write('const ImportEntry import_table[] = {\n')
+        fh.write('};\nconst int gen_fn_table_len = %d;\n' % len(allfuncs))
+        fh.write('const ImportEntry gen_import_table[] = {\n')
         for addr, dll, name in imports:
             fh.write('  {0x%xu, "%s", "%s"},\n' % (addr, dll, name))
-        fh.write('};\nconst int import_table_len = %d;\n' % len(imports))
+        fh.write('};\nconst int gen_import_table_len = %d;\n' % len(imports))
     for g in gens: total_unknown.update(g.unknown)
     print('functions', len(allfuncs), 'unknown', total_unknown.most_common(40))
 

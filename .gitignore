@@ -3,6 +3,7 @@ gen/
 gen_uw/
 build*/
 dist/
+game/
 out/
 re/bin/
 re/proj/

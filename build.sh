@@ -1,11 +1,21 @@
 #!/bin/sh
 # One-shot build: recompiles YOUR copy of the game and produces dist/Populous TB.app (+ UW if present).
 # usage: ./build.sh /path/to/Populous-The-Beginning   (folder that contains popTB.exe)
+#        ./build.sh --installer setup_populous_the_beginning_*.exe   (GOG offline installer)
 set -e
 P="$(cd "$(dirname "$0")" && pwd)"
+if [ "$1" = "--installer" ]; then
+  [ -f "$2" ] || { echo "usage: ./build.sh --installer <setup_populous_the_beginning_*.exe>" >&2; exit 1; }
+  command -v innoextract >/dev/null || { echo "missing 'innoextract' (brew install innoextract)" >&2; exit 1; }
+  echo "== extracting the installer into game/"
+  rm -rf "$P/game"
+  innoextract --gog -p 0 -d "$P/game" "$2" >/dev/null
+  set -- "$(dirname "$(find "$P/game" -maxdepth 3 -name popTB.exe | head -1)")"
+fi
 GAME="${1:-${POPTB_GAME:-}}"
 if [ -z "$GAME" ] || [ ! -f "$GAME/popTB.exe" ]; then
-  echo "usage: ./build.sh <game folder containing popTB.exe>" >&2; exit 1
+  echo "usage: ./build.sh <game folder containing popTB.exe>" >&2
+  echo "       ./build.sh --installer <setup_populous_the_beginning_*.exe>" >&2; exit 1
 fi
 GAME="$(cd "$GAME" && pwd)"
 
