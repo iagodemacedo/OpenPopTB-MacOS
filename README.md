@@ -24,10 +24,15 @@ compiled to a regular arm64 Mac app.
 > launch). For now, build from source; it takes about one minute after the tools are installed.
 
 
-1. Install the GOG version of *Populous: The Beginning* somewhere you can read its files
-   (e.g. extract the installer with [innoextract](https://constexpr.org/innoextract/), or copy the
-   folder from a Windows/CrossOver install). The folder must contain `popTB.exe`, `QMixer.dll`,
-   `WEANETR.dll` and the `data/`, `levels/`, `sound/`, `fmv/` folders.
+1. Get the game files from your GOG copy. The easiest way is to extract the offline installer with
+   [innoextract](https://constexpr.org/innoextract/):
+   ```sh
+   brew install innoextract
+   innoextract --gog -d populous "setup_populous_the_beginning_1.02_d3dfix_(76526).exe"
+   ```
+   (A folder copied from a Windows, GOG Galaxy or CrossOver install also works.) The folder must
+   contain `popTB.exe`, `QMixer.dll`, `WEANETR.dll` and the `data/`, `levels/`, `sound/`, `fmv/`
+   folders. Automatic extraction from the installer is planned for v0.2.0.
 2. Install the build tools:
    ```sh
    xcode-select --install

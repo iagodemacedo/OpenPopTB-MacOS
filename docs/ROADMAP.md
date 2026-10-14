@@ -13,6 +13,12 @@ the player's Mac from their own copy, the first time the app opens.
   `~/Library/Application Support/OpenPopTB/<hash>/`, compile it with the system `clang` (Xcode
   Command Line Tools; macOS offers to install them) into a dylib, then `dlopen` it. Progress screen
   ("Preparing the game, about 1 minute"). Rebuild automatically when the runtime version changes.
+- Accept the GOG installer directly: the player points to `setup_populous_the_beginning_*.exe`
+  (plus any `.bin` parts next to it) and the app extracts it, instead of asking for an extracted folder.
+  Bundle [innoextract](https://constexpr.org/innoextract/) (zlib license; needs liblzma, boost
+  libraries linked statically) and run the equivalent of `innoextract --gog -d <app data> <setup.exe>`,
+  then continue with the hash check. Keep accepting an already extracted/installed folder
+  (GOG Galaxy, CrossOver, Windows copy). Also add `--installer <setup.exe>` to `build.sh`.
 - Split the runtime so the app binary contains no `gen/` code: `fn_table`/`import_table` and all
   `f_*` come from the dylib.
 - CI (GitHub Actions, macOS runner) builds, signs ad hoc and attaches `OpenPopTB-MacOS-x.y.z.zip`
