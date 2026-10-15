@@ -93,8 +93,22 @@ make_app() {  # make_app <cmake target output> <display name>
     /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $MINOS" "$PL"
   echo "minimum macOS: $MINOS"
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VER" "$PL" 2>/dev/null || true
-  codesign --force --deep -s - "$APP"
+  sign_app "$APP" "$1"
   echo "done: $APP"
+}
+
+# Signs inside out (libraries, helper tools, then the app) with the hardened runtime, which
+# notarization requires. SIGN_ID is a "Developer ID Application" identity; without it, ad-hoc.
+SIGN_ID="${SIGN_ID:--}"
+sign() {
+  if [ "$SIGN_ID" = "-" ]; then set -- -s - "$@"; else set -- --timestamp -s "$SIGN_ID" "$@"; fi
+  out=$(codesign --force "$@" 2>&1) || { echo "$out" >&2; exit 1; }
+}
+sign_app() {  # sign_app <app> <executable name>
+  find "$1" -type f \( -name '*.dylib' -o -name '*.so' \) | while read -r lib; do sign "$lib"; done
+  sign --options runtime "$1/Contents/MacOS/innoextract"
+  sign --options runtime --entitlements "$P/tools/entitlements.plist" "$1"
+  codesign --verify --strict --deep "$1"
 }
 # the runtime must export what the generated code calls: link a tiny generated-style file against it
 check_loader() {
@@ -114,6 +128,30 @@ rm -rf "$OUT/pydeps" "$OUT/venv" "$PY" "$NOTICES"
 # guard: no game-derived file may end up in the release
 if find "$OUT" \( -iname '*.exe' -o -iname '*.dll' -o -name 'f[0-9][0-9].c' -o -name 'funcs.h' -o -name 'table.c' -o -name '*.bundle' \) | grep .; then
   echo "game-derived files found in the release, aborting" >&2; exit 1
+fi
+
+# Notarization, so macOS opens the apps without "Open Anyway". Credentials, either:
+#   NOTARY_PROFILE=<name>  a keychain profile from `xcrun notarytool store-credentials`, or
+#   NOTARY_APPLE_ID=<email> NOTARY_PASSWORD=<app-specific password> NOTARY_TEAM_ID=<team id>
+if [ -n "$NOTARY_PROFILE" ] || [ -n "$NOTARY_APPLE_ID" ]; then
+  [ "$SIGN_ID" != "-" ] || { echo "notarization needs SIGN_ID (Developer ID Application)" >&2; exit 1; }
+  if [ -n "$NOTARY_PROFILE" ]; then CRED="--keychain-profile $NOTARY_PROFILE"
+  else CRED="--apple-id $NOTARY_APPLE_ID --password $NOTARY_PASSWORD --team-id $NOTARY_TEAM_ID"; fi
+  SUB="$P/dist/notarize.zip"
+  rm -f "$SUB"
+  (cd "$OUT" && ditto -c -k --sequesterRsrc . "$SUB")
+  # shellcheck disable=SC2086
+  xcrun notarytool submit "$SUB" $CRED --wait --output-format json > "$P/dist/notarize.json" || true
+  cat "$P/dist/notarize.json"; echo
+  if ! grep -q '"status" *: *"Accepted"' "$P/dist/notarize.json"; then
+    ID=$(sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p' "$P/dist/notarize.json")
+    # shellcheck disable=SC2086
+    [ -n "$ID" ] && xcrun notarytool log "$ID" $CRED
+    echo "notarization failed" >&2; exit 1
+  fi
+  rm -f "$SUB"
+  xcrun stapler staple "$OUT/Populous TB.app"
+  xcrun stapler staple "$OUT/Populous UW.app"
 fi
 
 cp "$P/README.md" "$OUT/README.md"

@@ -19,8 +19,39 @@ jobs:
       - uses: actions/checkout@v4
       - name: Tools
         run: brew install cmake ninja sdl3 innoextract
+      # Signing and notarization run only when the secrets exist (forks build an ad-hoc signed app)
+      - name: Signing certificate
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          [ -n "$P12" ] || { echo "no DEVELOPER_ID_P12 secret: ad-hoc build"; exit 0; }
+          KC="$RUNNER_TEMP/sign.keychain-db"; KCPW=$(uuidgen)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KCPW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          ID=$(security find-identity -v -p codesigning "$KC" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
+          [ -n "$ID" ] || { echo "no Developer ID Application identity in the certificate" >&2; exit 1; }
+          echo "SIGN_ID=$ID" >> "$GITHUB_ENV"
       - name: Package
-        run: tools/package_release.sh
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          [ -n "$SIGN_ID" ] || unset NOTARY_APPLE_ID
+          tools/package_release.sh
+      - name: Check Gatekeeper
+        if: env.SIGN_ID != ''
+        run: |
+          for a in "dist/release/Populous TB.app" "dist/release/Populous UW.app"; do
+            spctl -a -vv -t exec "$a"; xcrun stapler validate "$a"
+          done
       - name: Show what was packaged
         run: |
           APP="dist/release/Populous TB.app"

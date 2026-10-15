@@ -13,9 +13,10 @@ How it works: [ARCHITECTURE.md](ARCHITECTURE.md), section 3. Decisions and what 
 - Minimum macOS of the download = the newest minimum among the bundled binaries (Homebrew bottles
   target the build machine; CI uses `macos-14`, so the download needs macOS 14). Building SDL3,
   innoextract and Boost from source with `MACOSX_DEPLOYMENT_TARGET=12.0` would lower it to 12.
-- Not done: notarization (needs an Apple developer account; today players must allow the app in
-  System Settings > Privacy & Security on first open), Intel build, and an x86 interpreter
-  fallback for players without the Command Line Tools.
+- Signed with a Developer ID and notarized since v0.1.2 (hardened runtime, plus
+  `disable-library-validation` so the app can load the game bundle compiled on the player's Mac).
+- Not done: Intel build, and an x86 interpreter fallback for players without the Command Line
+  Tools.
 
 ## 1. Hardware rendering (the Direct3D build)
 Why: higher resolutions, texture filtering, smoother look than the software renderer.

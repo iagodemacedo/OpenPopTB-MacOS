@@ -114,7 +114,9 @@ scaling, letterboxed). FMVs switch the display to 640x480x16 (RGB565).
      `/usr/bin/python3 -I gen.py`, compiles each file with `xcrun clang` (same flags as the CMake
      build, one job per performance core) and links `clang -bundle -bundle_loader <app binary>`, so
      the generated code's references to the runtime (`MEM`, `dispatch`, ...) resolve against the app;
-  4. `dlopen`s the bundle and reads the tables with `dlsym`. Bundles for other keys are deleted.
+  4. `dlopen`s the bundle (the bundle is only ad-hoc signed, so the hardened-runtime app carries the
+     `com.apple.security.cs.disable-library-validation` entitlement) and reads the tables with
+     `dlsym`. Bundles for other keys are deleted.
 
   About a minute the first time (40 s measured on a 15-core M-series Mac), about 4 s afterwards.
   The generated code was verified byte-identical to the from-source output (same capstone version).

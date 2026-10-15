@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-14
+### Changed
+- The download is signed with a Developer ID and notarized by Apple: macOS opens the apps without
+  the "Open Anyway" step. `tools/package_release.sh` signs with `SIGN_ID` and notarizes with
+  `NOTARY_PROFILE` (or `NOTARY_APPLE_ID`/`NOTARY_PASSWORD`/`NOTARY_TEAM_ID`); CI does both when the
+  signing secrets exist, and builds an ad-hoc signed app otherwise.
+- Apps use the hardened runtime with the `disable-library-validation` entitlement
+  (`tools/entitlements.plist`), needed to load the game bundle compiled on the player's Mac.
+
 ## [0.1.1] - 2026-10-14
 ### Added
 - Prebuilt download (`OpenPopTB-MacOS-0.1.1.zip`): the apps contain no game code; on first launch
