@@ -47,7 +47,21 @@ if [ -f "$GAME/popTBUW.exe" ]; then
   echo "== recompiling popTBUW.exe (Undiscovered Worlds)"
   "$PY" -I "$P/recomp/gen.py" "$P/gen_uw" "$GAME/popTBUW.exe" "$GAME/QMixer.dll" "$GAME/WEANETR.dll"
 fi
+if [ -f "$GAME/D3DPopTB.exe" ]; then
+  echo "== recompiling D3DPopTB.exe (hardware-rendered build)"
+  "$PY" -I "$P/recomp/gen.py" "$P/gen_d3d" "$GAME/D3DPopTB.exe" "$GAME/QMixer.dll" "$GAME/WEANETR.dll"
+fi
+if [ -f "$GAME/D3DPopTBUW.exe" ]; then
+  echo "== recompiling D3DPopTBUW.exe (hardware-rendered Undiscovered Worlds)"
+  "$PY" -I "$P/recomp/gen.py" "$P/gen_d3duw" "$GAME/D3DPopTBUW.exe" "$GAME/QMixer.dll" "$GAME/WEANETR.dll"
+fi
 echo "== building and packaging"
 "$P/tools/package.sh" "$GAME"
 echo
 echo "Done. Open: open \"$P/dist/Populous TB.app\"  (first launch asks for the game folder)"
+if [ -d "$P/dist/Populous TB D3D.app" ]; then
+  echo "      Hi-res Direct3D build: open \"$P/dist/Populous TB D3D.app\""
+fi
+if [ -d "$P/dist/Populous UW D3D.app" ]; then
+  echo "      Hi-res Direct3D Undiscovered Worlds: open \"$P/dist/Populous UW D3D.app\""
+fi

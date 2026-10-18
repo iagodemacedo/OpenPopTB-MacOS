@@ -57,6 +57,7 @@ game's PE files into C, and a **runtime** (C) that provides the environment that
 | `user32.c` | Windows, classes, **per-thread** message queues, `WndProc` dispatch, GDI/IMM/OLE stubs. |
 | `plat.c` | SDL3 window, presentation (8-bit palettized and RGB565), SDL events → Win32 messages and DirectInput, scripted input and screenshots for tests. |
 | `ddraw.c` | DirectDraw: surfaces in guest memory, primary/back buffer flip, palettes (global display palette, like real 8-bit hardware), Blt/BltFast (8 and 16 bpp). |
+| `d3d.c`, `d3d_gpu.c` | Direct3D 5 (`IDirect3D2`, device, viewport, material, texture) for `D3DPopTB.exe`. `d3d.c` is the COM layer; `d3d_gpu.c` records a scene (pre-transformed `D3DTLVERTEX` draws), renders it with SDL_GPU at window resolution (MSAA, mip maps) and copies a 1x version into the guest surface so the game's 2D drawing keeps working; `gpu_present()` then shows the frame and swaps in the hi-res pixels the game did not draw over. |
 | `dinput.c` | DirectInput keyboard and mouse: immediate state and buffered data, event notification handles (the game reads input on two threads that wait for these events). |
 | `dsound.c` | DirectSound software mixer on an SDL3 audio stream (44.1 kHz float), `IDirectSound3DListener/Buffer` with distance attenuation and panning, and `waveOut`. |
 | `misc.c` | timers (`timeSetEvent`), mmio, MCI/MIDI (absent), weanetr stubs used when networking is off. |

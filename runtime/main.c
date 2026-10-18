@@ -10,6 +10,10 @@
 #include <mach-o/dyld.h>
 #include <SDL3/SDL.h>
 
+extern uint32_t trace_ring[16][9];
+extern unsigned trace_ring_n;
+extern int trace_ring_on;
+extern int trace_on;
 static void on_fault(int sig, siginfo_t *si, void *uc) {
     (void)uc;
     uintptr_t a = (uintptr_t)si->si_addr;
@@ -17,6 +21,11 @@ static void on_fault(int sig, siginfo_t *si, void *uc) {
     if (a >= (uintptr_t)MEM && a < (uintptr_t)MEM + (1ull << 32)) fprintf(stderr, " (guest 0x%08x)", (uint32_t)(a - (uintptr_t)MEM));
     fprintf(stderr, "\n");
     fprintf(stderr, "load 0x%lx\n", (unsigned long)_dyld_get_image_header(0));
+    if (trace_ring_on)
+        for (unsigned i = trace_ring_n < 16 ? 0 : trace_ring_n - 16; i != trace_ring_n; i++) {
+            const uint32_t *r = trace_ring[i & 15];
+            fprintf(stderr, "[last] %08x eax=%x ecx=%x edx=%x ebx=%x esp=%x ebp=%x esi=%x edi=%x\n", r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]);
+        }
     void *bt[64]; int n = backtrace(bt, 64);
     backtrace_symbols_fd(bt, n, 2);
     _exit(128 + sig);
@@ -195,6 +204,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--installer") && i + 1 < argc) installer = argv[++i];
         else if (!strcmp(argv[i], "-v")) rt_verbose = 1;
         else if (!strcmp(argv[i], "-vv")) rt_verbose = 2;
+        else if (!strcmp(argv[i], "-vvv")) rt_verbose = 3;
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_shot_path = argv[++i];
         else if (!strcmp(argv[i], "--shot-frame") && i + 1 < argc) g_shot_frame = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--shot-dir") && i + 1 < argc) g_shot_dir = argv[++i];
@@ -224,6 +234,7 @@ int main(int argc, char **argv) {
     struct stat st;
     chdir(g_root);
     struct sigaction sa = {0};
+    if (getenv("POPTB_TRACE_LAST")) trace_ring_on = trace_on = 1;
     sa.sa_sigaction = on_fault; sa.sa_flags = SA_SIGINFO;
     sigaction(SIGSEGV, &sa, NULL); sigaction(SIGBUS, &sa, NULL); sigaction(SIGFPE, &sa, NULL);
     mem_init();

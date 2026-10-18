@@ -7,12 +7,6 @@
 #include "input.h"
 #include <unistd.h>
 
-#define COMFN(name, nargs) \
-    static uint32_t name##_i(CPU *R); \
-    static void name(CPU *R) { R->eax = name##_i(R); R->esp += 4 + 4 * ((nargs) + 1); } \
-    static uint32_t name##_i(CPU *R)
-#define THIS ARG(0)
-
 #define OUT_RATE 44100
 #define MAXBUF 512
 
@@ -205,7 +199,6 @@ int audio_init(void) {
 
 static Buf *B(uint32_t o) { return com_native(o); }
 
-static void com_addref(CPU *R) { uint32_t o = ARG(0); wr32(o + 4, rd32(o + 4) + 1); R->eax = rd32(o + 4); R->esp += 8; }
 static void buf_release(CPU *R) {
     uint32_t o = ARG(0); uint32_t c = rd32(o + 4); if (c) c--; wr32(o + 4, c);
     if (!c) {

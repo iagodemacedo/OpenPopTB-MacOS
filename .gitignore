@@ -1,6 +1,8 @@
 # Derived from the game executables or from builds: never commit
 gen/
 gen_uw/
+gen_d3d/
+gen_d3duw/
 build*/
 dist/
 game/

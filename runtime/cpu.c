@@ -80,6 +80,7 @@ void dispatch(CPU *R, uint32_t t) {
     if (t >= GUEST_THUNK_BASE && t < GUEST_THUNK_BASE + GUEST_THUNK_MAX * 4) {
         uint32_t i = (t - GUEST_THUNK_BASE) / 4;
         native_fn f = thunks[i];
+        if (rt_verbose >= 3 && i < (uint32_t)nthunks) LOG("call %s ret=0x%08x", thunk_names[i], rd32(R->esp));
         if (f) { f(R); return; }
         if (i < (uint32_t)nthunks) rt_fatal("unimplemented Win32 function: %s (ret=0x%08x)", thunk_names[i], rd32(R->esp));
     }
@@ -200,6 +201,7 @@ volatile int gil_contended;
 // time slice: the GIL holder only yields after holding it for at least GIL_QUANTUM
 static uint64_t gil_t0, gil_quantum;
 void gil_lock(void) {
+    uint64_t w0 = rt_verbose ? mach_absolute_time() : 0;
     pthread_mutex_lock(&gil_mu);
     uint64_t t = gil_next++;
     gil_waiters++;
@@ -209,6 +211,11 @@ void gil_lock(void) {
     gil_contended = gil_waiters > 0;
     pthread_mutex_unlock(&gil_mu);
     gil_t0 = mach_absolute_time();
+    if (rt_verbose) {   // report long waits for the GIL
+        static mach_timebase_info_data_t tb; if (!tb.denom) mach_timebase_info(&tb);
+        uint64_t ms = (gil_t0 - w0) * tb.numer / tb.denom / 1000000;
+        static int n; if (ms >= 100 && n++ < 50) LOG("[%u] GIL wait %llu ms (thread %p)", now_ms() % 100000, (unsigned long long)ms, (void *)pthread_self());
+    }
 }
 void gil_unlock(void) {
     pthread_mutex_lock(&gil_mu);

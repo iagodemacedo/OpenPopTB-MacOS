@@ -3,12 +3,6 @@
 #include "input.h"
 #include "handles.h"
 
-#define COMFN(name, nargs) \
-    static uint32_t name##_i(CPU *R); \
-    static void name(CPU *R) { R->eax = name##_i(R); R->esp += 4 + 4 * ((nargs) + 1); } \
-    static uint32_t name##_i(CPU *R)
-#define THIS ARG(0)
-
 uint8_t di_keys[256];
 int32_t di_mouse_dx, di_mouse_dy, di_mouse_dz;
 uint8_t di_mouse_btn[4];
@@ -47,8 +41,6 @@ int di_mouse_count(void) { return (mt - mh + BUFN) % BUFN; }
 typedef struct { int mouse; int acquired; uint32_t fmt_size; } Dev;
 static uint32_t vt_di, vt_dev;
 
-static void com_addref(CPU *R) { uint32_t o = ARG(0); wr32(o + 4, rd32(o + 4) + 1); R->eax = rd32(o + 4); R->esp += 8; }
-static void com_release(CPU *R) { uint32_t o = ARG(0); uint32_t c = rd32(o + 4); if (c) c--; wr32(o + 4, c); R->eax = c; R->esp += 8; }
 COMFN(di_QueryInterface, 2) { wr32(ARG(2), THIS); return 0; }
 COMFN(di_CreateDevice, 3) {
     uint32_t g = ARG(1);
@@ -111,7 +103,9 @@ COMFN(dv_GetDeviceData, 4) {
         if (d->mouse && e.ofs >= 12) LOG("DI mouse button ofs=%u data=%x (sz=%u)", e.ofs, e.data, sz);
         k++;
     }
-    if (d->mouse && k) di_mouse_dx = di_mouse_dy = di_mouse_dz = 0;
+    if (d->mouse && k) {
+        di_mouse_dx = di_mouse_dy = di_mouse_dz = 0;
+    }
     wr32(pn, k);
     return 0;
 }

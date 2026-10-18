@@ -55,6 +55,8 @@ function(poptb_target name gendir exe outname bundle)
 endfunction()
 poptb_target(poptb gen popTB.exe PopulousTB "Populous TB")
 poptb_target(poptbuw gen_uw popTBUW.exe PopulousUW "Populous UW")
+poptb_target(poptbd3d gen_d3d D3DPopTB.exe PopulousD3D "Populous D3D")
+poptb_target(poptbd3duw gen_d3duw D3DPopTBUW.exe PopulousD3DUW "Populous D3D UW")
 
 # Hand-reimplemented terrain viewer (first approach; kept for reference)
 add_executable(openpoptb-viewer

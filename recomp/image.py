@@ -3,6 +3,8 @@
 import pefile, capstone
 from capstone import x86_const as X
 
+IMAGE_SCN_MEM_EXECUTE = 0x20000000
+
 class Image:
     def __init__(self, path, seeds_tsv=None):
         self.pe = pe = pefile.PE(path)
@@ -18,6 +20,10 @@ class Image:
             n = min(len(d), s.Misc_VirtualSize or len(d))
             self.mem[s.VirtualAddress:s.VirtualAddress + n] = d[:n]
             self.sections.append((s.Name.rstrip(b'\0').decode(), va, max(s.Misc_VirtualSize, len(d)), s.Characteristics))
+        # The 2018 GOG builds list a second segment with the same name as a code segment (CSEG) with data-only flags
+        # although it holds code: a segment is code when it, or a segment of the same name, is executable.
+        code_names = {n for n, _, _, ch in self.sections if ch & IMAGE_SCN_MEM_EXECUTE}
+        self.code_ranges = [(va, va + sz) for n, va, sz, ch in self.sections if n in code_names]
         self.relocs = set()
         for b in getattr(pe, 'DIRECTORY_ENTRY_BASERELOC', []):
             for e in b.entries:
@@ -42,10 +48,7 @@ class Image:
             self.seeds.add(a)
 
     def is_code(self, a):
-        for name, va, sz, ch in self.sections:
-            if va <= a < va + sz and (ch & 0x20000000):
-                return True
-        return False
+        return any(lo <= a < hi for lo, hi in self.code_ranges)
 
     def in_image(self, a):
         return self.base <= a < self.base + self.size

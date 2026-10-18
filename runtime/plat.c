@@ -1,11 +1,14 @@
 // SDL3 platform: window, frame presentation, events -> Win32 messages and DirectInput.
 #include "rt.h"
 #include "input.h"
+#include "d3d.h"
 #include <SDL3/SDL.h>
 #include <pthread.h>
 
 static SDL_Window *win;
 static SDL_Renderer *ren;
+static int use_gpu;   // present through SDL_GPU (the Direct3D build) instead of SDL_Renderer
+extern const char *g_exe_name;
 static SDL_Texture *tex;
 static int tex_w = 640, tex_h = 480;
 static uint32_t *rgba;
@@ -55,8 +58,21 @@ void plat_script(const char *spec) {
     }
     qsort(script, nscript, sizeof script[0], ev_cmp);
 }
+// SDL_GPU path: the game picture is letterboxed in the window; scale and offset of its top-left corner (window points)
+static void letterbox(float *scale, float *ox, float *oy) {
+    int pw, ph;
+    SDL_GetWindowSize(win, &pw, &ph);
+    float sc = (float)pw / tex_w < (float)ph / tex_h ? (float)pw / tex_w : (float)ph / tex_h;
+    *scale = sc;
+    *ox = ((float)pw - tex_w * sc) / 2;
+    *oy = ((float)ph - tex_h * sc) / 2;
+}
 static void game_to_window(int gx, int gy, float *wx, float *wy) {
-    SDL_RenderCoordinatesToWindow(ren, (float)gx + 0.5f, (float)gy + 0.5f, wx, wy);
+    if (!use_gpu) { SDL_RenderCoordinatesToWindow(ren, (float)gx + 0.5f, (float)gy + 0.5f, wx, wy); return; }
+    float sc, ox, oy;
+    letterbox(&sc, &ox, &oy);
+    *wx = ox + ((float)gx + 0.5f) * sc;
+    *wy = oy + ((float)gy + 0.5f) * sc;
 }
 static void script_tick(void) {
     uint32_t t = now_ms() - g_start_ms;
@@ -91,25 +107,49 @@ static void script_tick(void) {
 void plat_init(void) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS)) rt_fatal("SDL_Init: %s", SDL_GetError());
     win = SDL_CreateWindow("Populous: The Beginning", 1280, 960, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-    ren = SDL_CreateRenderer(win, NULL);
-    SDL_SetRenderVSync(ren, 0);
-    SDL_SetRenderLogicalPresentation(ren, tex_w, tex_h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-    SDL_RenderClear(ren);
-    SDL_RenderPresent(ren);
+    use_gpu = strstr(g_exe_name, "D3D") != NULL;
+    if (use_gpu && !gpu_window_init(win)) {
+        WARN("SDL_GPU presentation is not available, using the plain renderer");
+        SDL_DestroyWindow(win);
+        win = SDL_CreateWindow("Populous: The Beginning", 1280, 960, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        use_gpu = 0;
+    }
+    if (!use_gpu) {
+        ren = SDL_CreateRenderer(win, NULL);
+        SDL_SetRenderVSync(ren, 0);
+        SDL_SetRenderLogicalPresentation(ren, tex_w, tex_h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+        SDL_RenderClear(ren);
+        SDL_RenderPresent(ren);
+    }
     SDL_HideCursor();
     SDL_SetWindowRelativeMouseMode(win, true);
     g_start_ms = now_ms();
 }
 
+// Final-image filter. POPTB_FILTER=nearest|linear|pixelart (default pixelart, needs SDL 3.4+).
+static SDL_ScaleMode scale_mode(void) {
+    const char *f = getenv("POPTB_FILTER");
+    if (f && !strcmp(f, "nearest")) return SDL_SCALEMODE_NEAREST;
+    if (f && !strcmp(f, "linear")) return SDL_SCALEMODE_LINEAR;
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+    return SDL_SCALEMODE_PIXELART;
+#else
+    return SDL_SCALEMODE_NEAREST;
+#endif
+}
+
 static uint32_t last_present;
 void plat_present(const uint8_t *pix, int w, int h, int pitch, const uint32_t *pal) {
     if (w != tex_w || h != tex_h || !tex) {
-        if (tex) SDL_DestroyTexture(tex);
-        tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
-        SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
-        SDL_SetRenderLogicalPresentation(ren, w, h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-        free(rgba); rgba = malloc((size_t)w * h * 4);
+        if (use_gpu) { if (!rgba || w != tex_w || h != tex_h) { free(rgba); rgba = malloc((size_t)w * h * 4); } tex = (SDL_Texture *)1; }
+        else {
+            if (tex) SDL_DestroyTexture(tex);
+            tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+            SDL_SetTextureScaleMode(tex, scale_mode());
+            SDL_SetRenderLogicalPresentation(ren, w, h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+            free(rgba); rgba = malloc((size_t)w * h * 4);
+        }
         tex_w = w; tex_h = h;
     }
     for (int y = 0; y < h; y++) {
@@ -122,10 +162,13 @@ void plat_present(const uint8_t *pix, int w, int h, int pitch, const uint32_t *p
             d[x] = ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
         }
     }
-    SDL_UpdateTexture(tex, NULL, rgba, w * 4);
-    SDL_RenderClear(ren);
-    SDL_RenderTexture(ren, tex, NULL, NULL);
-    SDL_RenderPresent(ren);
+    if (use_gpu) gpu_present(rgba, w, h, pal ? NULL : pix, pitch);
+    else {
+        SDL_UpdateTexture(tex, NULL, rgba, w * 4);
+        SDL_RenderClear(ren);
+        SDL_RenderTexture(ren, tex, NULL, NULL);
+        SDL_RenderPresent(ren);
+    }
     last_present = now_ms();
     if (rt_verbose > 1) { static int n; if (n++ % 10 == 0) LOG("[%u] present #%d %dx%d", now_ms() % 100000, n, w, h); }
     extern const char *g_shot_path, *g_shot_dir; extern int g_shot_frame, g_shot_every;
@@ -185,9 +228,17 @@ static const KeyMap *key_of(SDL_Scancode sc) {
     return NULL;
 }
 
+// window points -> game pixels (the picture is letterboxed in the window)
+static void window_to_game(float wx, float wy, float *x, float *y) {
+    if (!use_gpu) { SDL_RenderCoordinatesFromWindow(ren, wx, wy, x, y); return; }
+    float sc, ox, oy;
+    letterbox(&sc, &ox, &oy);
+    *x = (wx - ox) / sc;
+    *y = (wy - oy) / sc;
+}
 static void mouse_to_game(float wx, float wy) {
     float x, y;
-    SDL_RenderCoordinatesFromWindow(ren, wx, wy, &x, &y);
+    window_to_game(wx, wy, &x, &y);
     int ix = (int)x, iy = (int)y;
     if (ix < 0) ix = 0; if (iy < 0) iy = 0;
     if (ix >= tex_w) ix = tex_w - 1; if (iy >= tex_h) iy = tex_h - 1;
@@ -236,8 +287,8 @@ void plat_pump(void) {
         case SDL_EVENT_MOUSE_MOTION: {
             // deltas in window points -> game pixels
             float x0, y0, x1, y1;
-            SDL_RenderCoordinatesFromWindow(ren, 0, 0, &x0, &y0);
-            SDL_RenderCoordinatesFromWindow(ren, e.motion.xrel, e.motion.yrel, &x1, &y1);
+            window_to_game(0, 0, &x0, &y0);
+            window_to_game(e.motion.xrel, e.motion.yrel, &x1, &y1);
             vmove(vx + (x1 - x0), vy + (y1 - y0));
             msgq_post(g_hwnd, 0x200, mk_state(), (uint32_t)(g_mouse_x & 0xffff) | ((uint32_t)g_mouse_y << 16));
             break;
