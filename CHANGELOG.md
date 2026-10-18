@@ -4,6 +4,42 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- Hi-res Direct3D build: `D3DPopTB.exe` (shipped with the GOG game) is recompiled too and runs on a
+  Direct3D 5 (`IDirect3D2`) implementation on top of SDL_GPU (`runtime/d3d.c`, `runtime/d3d_gpu.c`).
+  The scene is rendered at the window's resolution with 4x MSAA, mip maps and anisotropic
+  filtering; the 2D interface and cursor stay crisp on top. `build.sh` produces
+  `dist/Populous TB D3D.app` and `dist/Populous UW D3D.app` when `D3DPopTB.exe` / `D3DPopTBUW.exe` are present. Tunables: `POPTB_D3D_SCALE`,
+  `POPTB_D3D_MSAA`, `POPTB_D3D_FILTER=game`. Only the Metal backend has shaders so far.
+- Software build: the final image is scaled with SDL's pixel-art filter (`POPTB_FILTER=nearest|linear|pixelart`).
+- Debugging: `-vvv` logs every native call, `POPTB_TRACE_LAST=1` prints the last executed guest
+  addresses on a crash (needs `POPTB_TRACE_RANGE` at generation time), `POPTB_D3D_DUMP=<dir>` saves
+  window pictures.
+
+- The graphics *Quick Defaults* preset is set to High at start (all four builds) (`runtime/presets.c`; the
+  game does not remember it). `POPTB_PRESET=low|medium|off` overrides it.
+- App icons: the built apps get the game's own icon (`gfw_high.ico` / `gfw_high__addon.ico` from the
+  game folder, then the older `goggame-*.ico`, then the one embedded in the exe via `tools/exe_icon.py`).
+
+### Fixed
+- `CFBundleIconFile` was never set (CMake leaves an empty key), so the apps showed no icon even when
+  an `.ico` was found.
+- Direct3D build: the picture and the cursor are clipped to the viewport of the scene, but the game
+  switches between a 3D viewport and a full-screen one within a frame; the read-back now covers
+  everything drawn (the cursor over the left panel used to be invisible), and only the *current*
+  viewport sets the clipping rectangle.
+- Direct3D build: the GIL is released while waiting for the GPU or the display (vsync), so the input
+  and sound threads no longer starve (clicks and the cursor reacted late or not at all).
+- Game versions whose second `CSEG` section is not flagged executable (the 2018 GOG installer):
+  code discovery treats a section as code when a section of the same name is executable.
+- Direct3D build: only the rectangles a scene drew into are copied back (not their bounding box),
+  GPU buffers are reused between scenes, texture lookups no longer scan a list, and a colour key
+  change refreshes the texture. Display refresh is no longer waited for after every frame.
+- The DX3 `IDirect3D`/`IDirect3DTexture` interfaces are refused instead of being served with the
+  DX5 method tables.
+- `MessageBoxW` text with non-ASCII characters is printed correctly.
+- `IDirectDrawSurface::QueryInterface` fails for interfaces it does not implement (colour/gamma
+  control) instead of returning the surface itself.
 
 ## [0.1.2] - 2026-10-14
 ### Changed

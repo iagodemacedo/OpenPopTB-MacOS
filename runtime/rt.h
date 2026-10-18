@@ -47,6 +47,7 @@ uint32_t shim_addr(const char *name);                 // thunk for a shim (for G
     static uint32_t impl_##id(CPU *R)
 
 // ---- native -> guest call ----
+void preset_apply_once(CPU *R);   // presets.c
 uint32_t guest_call(CPU *R, uint32_t fn, int nargs, ...);   // stdcall or cdecl (esp restored)
 
 // ---- threads / GIL ----
@@ -71,6 +72,14 @@ uint32_t now_ms(void);
 // ---- COM ----
 uint32_t com_new(const char *iface, uint32_t vtbl, uint32_t extra_bytes, void *native);
 void *com_native(uint32_t obj);
+// stdcall COM method: nargs counts the arguments after `this`
+#define COMFN(name, nargs) \
+    static uint32_t name##_i(CPU *R); \
+    static void name(CPU *R) { R->eax = name##_i(R); R->esp += 4 + 4 * ((nargs) + 1); } \
+    static uint32_t name##_i(CPU *R)
+#define THIS ARG(0)
+void com_addref(CPU *R);    // shared IUnknown::AddRef / Release for plain reference-counted objects
+void com_release(CPU *R);
 uint32_t com_vtbl(const char *iface, const char **methods, int n, native_fn *impls);
 
 // ---- window / platform ----

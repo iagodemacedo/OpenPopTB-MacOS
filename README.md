@@ -74,6 +74,17 @@ macOS 14 or later (building from source works on macOS 12+).
 
 To build the downloadable apps yourself: `tools/package_release.sh` (needs no game files).
 
+### Hi-res (Direct3D) build
+If the game folder contains `D3DPopTB.exe` / `D3DPopTBUW.exe` (the GOG release does), `build.sh` also makes
+`dist/Populous TB D3D.app` and `dist/Populous UW D3D.app`: the same game, rendered on the GPU at your window's resolution with
+antialiasing and filtered textures instead of the 640x480 software renderer. It is not part of the
+prebuilt download yet.
+
+### Graphics preset
+The options screen's *Quick Defaults* preset starts at **High** (800x600, high landscape detail) in every build
+on every launch, because the game itself forgets everything but the landscape detail. Set
+`POPTB_PRESET=low|medium|off` to change that (`off` leaves the game's own state).
+
 ### Tested game version
 The GOG release, version 1.01. `build.sh` and the app check these SHA-256 hashes and warn if yours differ
 (other versions may work but are untested; the runtime has a few address-specific tweaks).

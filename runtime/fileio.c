@@ -309,9 +309,9 @@ static const RegVal regvals[] = {
 };
 SHIM(RegOpenKeyExA, 5) { LOG("RegOpenKeyExA(%s)", ARG(1) ? gstr(ARG(1)) : ""); wr32(ARG(4), 0x2001); return 0; }
 SHIM(RegOpenKeyA, 3) { LOG("RegOpenKeyA(%s)", ARG(1) ? gstr(ARG(1)) : ""); wr32(ARG(2), 0x2001); return 0; }
-SHIM(RegCreateKeyExA, 9) { wr32(ARG(7), 0x2001); if (ARG(8)) wr32(ARG(8), 2); return 0; }
+SHIM(RegCreateKeyExA, 9) { LOG("RegCreateKeyExA(%s)", ARG(1) ? gstr(ARG(1)) : ""); wr32(ARG(7), 0x2001); if (ARG(8)) wr32(ARG(8), 2); return 0; }
 SHIM(RegCloseKey, 1) { return 0; }
-SHIM(RegSetValueExA, 6) { return 0; }
+SHIM(RegSetValueExA, 6) { LOG("RegSetValueExA(%s) type=%u len=%u", ARG(1) ? gstr(ARG(1)) : "", ARG(3), ARG(5)); return 0; }
 SHIM(RegFlushKey, 1) { return 0; }
 SHIM(RegQueryValueExA, 6) {
     const char *n = ARG(1) ? gstr(ARG(1)) : "";

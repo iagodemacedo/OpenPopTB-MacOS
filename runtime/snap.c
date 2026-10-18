@@ -22,7 +22,15 @@ static FILE *thread_trace(CPU *R) {
     cpus[n] = R; fs[n] = fopen(p, "wb");
     return fs[n++];
 }
+// POPTB_TRACE_LAST=1 (with a trace-instrumented gen): keep the last executed addresses, printed on a crash
+uint32_t trace_ring[16][9];
+unsigned trace_ring_n; int trace_ring_on;
 void trace_rec(CPU *R, uint32_t a) {
+    if (trace_ring_on) {
+        uint32_t *r = trace_ring[trace_ring_n++ & 15];
+        r[0] = a; r[1] = R->eax; r[2] = R->ecx; r[3] = R->edx; r[4] = R->ebx; r[5] = R->esp; r[6] = R->ebp; r[7] = R->esi; r[8] = R->edi;
+        return;
+    }
     if (trace_all) {
         FILE *f = thread_trace(R);
         if (!f) return;

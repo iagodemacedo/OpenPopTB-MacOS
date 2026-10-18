@@ -16,9 +16,11 @@ static uint32_t win_tid(uint32_t hwnd);
 void msgq_post_tid(uint32_t tid, uint32_t hwnd, uint32_t msg, uint32_t wp, uint32_t lp) {
     pthread_mutex_lock(&q_mu);
     int n = (qt + 1) % QN;
-    if (n != qh) {   // queue full: drop
+    if (n != qh) {
         q[qt] = (WMsg){hwnd, msg, wp, lp, now_ms(), (uint32_t)g_mouse_x, (uint32_t)g_mouse_y, tid};
         qt = n;
+    } else {   // queue full: drop
+        static int ndrop; if (ndrop++ < 5) WARN("message queue full, dropping msg %x for window %x (thread %x)", msg, hwnd, tid);
     }
     pthread_mutex_unlock(&q_mu);
     (void)seqtime;
@@ -174,7 +176,30 @@ SHIM(MessageBoxA, 4) {
     fprintf(stderr, "[MessageBox] %s: %s\n", ARG(2) ? gstr(ARG(2)) : "", ARG(1) ? gstr(ARG(1)) : "");
     return 1;   // IDOK
 }
-SHIM(MessageBoxW, 4) { fprintf(stderr, "[MessageBoxW]\n"); return 1; }
+// UTF-16 guest string -> UTF-8 (surrogate pairs combined) for diagnostics
+static void wide_to_utf8(uint32_t p, char *out, size_t cap) {
+    size_t n = 0;
+    while (p && n + 5 < cap) {
+        uint32_t c = rd16(p); p += 2;
+        if (!c) break;
+        if (c >= 0xd800 && c < 0xdc00) {
+            uint32_t lo = rd16(p);
+            if (lo >= 0xdc00 && lo < 0xe000) { c = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00); p += 2; }
+        }
+        if (c < 0x80) out[n++] = (char)c;
+        else if (c < 0x800) { out[n++] = (char)(0xc0 | c >> 6); out[n++] = (char)(0x80 | (c & 0x3f)); }
+        else if (c < 0x10000) { out[n++] = (char)(0xe0 | c >> 12); out[n++] = (char)(0x80 | (c >> 6 & 0x3f)); out[n++] = (char)(0x80 | (c & 0x3f)); }
+        else { out[n++] = (char)(0xf0 | c >> 18); out[n++] = (char)(0x80 | (c >> 12 & 0x3f)); out[n++] = (char)(0x80 | (c >> 6 & 0x3f)); out[n++] = (char)(0x80 | (c & 0x3f)); }
+    }
+    out[n] = 0;
+}
+SHIM(MessageBoxW, 4) {
+    char text[1024], caption[256];
+    wide_to_utf8(ARG(1), text, sizeof text);
+    wide_to_utf8(ARG(2), caption, sizeof caption);
+    fprintf(stderr, "[MessageBoxW] %s: %s\n", caption, text);
+    return 1;
+}
 SHIM(OpenClipboard, 1) { return 0; }
 SHIM(CloseClipboard, 0) { return 1; }
 SHIM(GetClipboardData, 1) { return 0; }

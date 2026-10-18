@@ -2,7 +2,7 @@
 
 ## Logs
 - `-v` logs Win32/DirectX activity (files opened, registry, DirectDraw modes, sockets...).
-- `-vv` also logs per-frame activity (surface locks, flips, audio buffer positions).
+- `-vv` also logs per-frame activity (surface locks, flips, audio buffer positions); `-vvv` logs every native (COM/Win32) call.
 - A call to an unimplemented Win32 function aborts with
   `unimplemented Win32 function: <Name> (ret=<return address>)`. Add a `SHIM(Name, nargs)` in the
   runtime (nargs = stdcall argument count; `-1` for cdecl).
@@ -17,6 +17,10 @@ POPTB_BIN=$PWD/build-dbg tools/run.sh 60          # reproduce
 tools/where.sh <load addr> <pc> <pc> ...          # -> gen/fNN.c line -> L_<x86 address>
 ```
 Native function names in backtraces are `f_<x86 address>`.
+
+To find the guest instruction that crashed: generate with `POPTB_TRACE_RANGE=<lo>-<hi>` around the
+function from the backtrace, then run with `POPTB_TRACE_LAST=1`; the crash report lists the last
+executed addresses with registers (`[last] ...`).
 
 ## Automated runs (no hands needed)
 ```sh

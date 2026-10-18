@@ -19,14 +19,16 @@ How it works: [ARCHITECTURE.md](ARCHITECTURE.md), section 3. Decisions and what 
   Tools.
 
 ## 1. Hardware rendering (the Direct3D build)
-Why: higher resolutions, texture filtering, smoother look than the software renderer.
-- Find out which Direct3D version `D3DPopTB.exe` uses (it gets the interface through
-  `QueryInterface` on DirectDraw; it imports only `DirectDrawCreate`/`DirectDrawEnumerateA`).
-  ~10 minutes; this sizes the rest.
-- Recompile `D3DPopTB.exe` (automatic with `recomp/gen.py`).
-- Implement Direct3D (textures, render states, z-buffer, blending, primitives) on Metal or SDL_GPU.
-- Validate scene by scene against the software renderer.
-Effort: days. Risk: medium (many state details that become visual glitches).
+Done for the basics: `D3DPopTB.exe` uses Direct3D 5 (`IDirect3D2`, pre-transformed vertices only) and
+runs on `runtime/d3d.c` + `runtime/d3d_gpu.c` (SDL_GPU, Metal shaders), rendering at window
+resolution with MSAA, mip maps and anisotropic filtering. See [ARCHITECTURE.md](ARCHITECTURE.md).
+Left:
+- Shaders for Vulkan/Direct3D 12 (HLSL + SDL_shadercross) to run on other platforms.
+- Fog, untransformed vertices (`D3DVT_VERTEX`/`LVERTEX`), execute-less lighting: not seen in use yet.
+- Validate every scene (campaign, Undiscovered Worlds `D3DPopTBUW.exe`, water, spells) against the
+  software renderer; texture-blend corner cases (`D3DTBLEND_*`) are guesses.
+- Release packaging: the prebuilt app does not include the D3D build yet.
+- Replace textures with higher resolution ones (needs a texture pack).
 
 ## 2. Multiplayer (TCP/IP)
 Paused. Progress and next steps in [MULTIPLAYER.md](MULTIPLAYER.md).
