@@ -33,7 +33,8 @@ compiled to a regular arm64 Mac app.
 ## Quick start
 ### Download (no build needed)
 1. Download `OpenPopTB-MacOS-x.y.z.zip` from the [releases page](https://github.com/iagodemacedo/OpenPopTB-MacOS/releases)
-   and unzip it. It contains `Populous TB.app` and `Populous UW.app` (Undiscovered Worlds).
+   and unzip it. It contains `Populous TB.app`, `Populous UW.app` (Undiscovered Worlds) and
+   `Populous TB (Direct3D).app` (hardware rendering at the window's resolution).
 2. Open `Populous TB.app`. The apps are signed and notarized by Apple, so macOS opens them
    normally (it only asks once to confirm an app downloaded from the internet).
 3. Choose your copy of the game: the GOG offline installer

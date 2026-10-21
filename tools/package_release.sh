@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds the downloadable release: dist/OpenPopTB-MacOS-<version>.zip with "Populous TB.app" and
-# "Populous UW.app". The apps contain only our code (runtime + recompiler) and third-party tools; the
+# Builds the downloadable release: dist/OpenPopTB-MacOS-<version>.zip with "Populous TB.app",
+# "Populous UW.app" and "Populous TB (Direct3D).app". The apps contain only our code (runtime + recompiler) and third-party tools; the
 # game code is generated from the player's copy on first launch (runtime/prepare.c). Never pass a
 # game folder here: nothing in the release may come from the game.
 # Needs: cmake ninja sdl3 innoextract (brew), python3 with pip, Xcode Command Line Tools.
@@ -14,7 +14,7 @@ CAPSTONE=capstone==5.0.7     # generated code was verified identical with this v
 PEFILE=pefile==2024.8.26
 
 cmake -S "$P" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPOPTB_PREBUILT=ON >/dev/null
-ninja -C "$B" poptb poptbuw
+ninja -C "$B" poptb poptbuw poptbd3d
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 # Python side of the recompiler, run on the player's Mac by the Command Line Tools' python3.
@@ -23,6 +23,7 @@ PY="$OUT/recomp"
 mkdir -p "$PY/seeds"
 cp "$P/recomp/gen.py" "$P/recomp/image.py" "$PY/"
 cp "$P/re/export/functions.tsv" "$PY/seeds/popTB.exe.tsv"   # function addresses only, no code
+cp "$P/re/export_d3d/functions.tsv" "$PY/seeds/D3DPopTB.exe.tsv"
 python3 -m venv "$OUT/venv"   # a venv: Homebrew's python3 refuses pip installs (PEP 668)
 "$OUT/venv/bin/pip" install -q --no-compile --target "$OUT/pydeps" --platform macosx_11_0_arm64 \
   --only-binary=:all: --python-version 3.9 "$CAPSTONE" "$PEFILE"
@@ -70,7 +71,7 @@ bundle_deps() {  # bundle_deps <binary> <Frameworks dir> <prefix for the binary'
   done
 }
 
-make_app() {  # make_app <cmake target output> <display name>
+make_app() {  # make_app <cmake target output> <display name> <assets/icons name>
   APP="$OUT/$2.app"
   cp -R "$B/$1.app" "$APP"
   FW="$APP/Contents/Frameworks"; RES="$APP/Contents/Resources"
@@ -85,6 +86,9 @@ make_app() {  # make_app <cmake target output> <display name>
   cp "$P/runtime/cpu.h" "$P/runtime/rt_ops.h" "$P/runtime/table.h" "$RES/include/"
   cp "$NOTICES" "$P/LICENSE" "$RES/"
   PL="$APP/Contents/Info.plist"
+  cp "$P/assets/icons/$3.icns" "$RES/AppIcon.icns"   # drawn by tools/make_icons.py
+  /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$PL" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$PL"
   /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$PL" 2>/dev/null || true
   # the oldest macOS the app runs on is the newest minimum among its binaries (Homebrew bottles are
   # built for the machine's macOS, so a release built on macOS 14 needs macOS 14)
@@ -121,8 +125,9 @@ check_loader() {
 }
 check_loader "$B/PopulousTB.app/Contents/MacOS/PopulousTB"
 
-make_app PopulousTB "Populous TB"
-make_app PopulousUW "Populous UW"
+make_app PopulousTB "Populous TB" tb
+make_app PopulousUW "Populous UW" uw
+make_app PopulousTBD3D "Populous TB (Direct3D)" d3d
 rm -rf "$OUT/pydeps" "$OUT/venv" "$PY" "$NOTICES"
 
 # guard: no game-derived file may end up in the release
@@ -152,10 +157,11 @@ if [ -n "$NOTARY_PROFILE" ] || [ -n "$NOTARY_APPLE_ID" ]; then
   rm -f "$SUB"
   xcrun stapler staple "$OUT/Populous TB.app"
   xcrun stapler staple "$OUT/Populous UW.app"
+  xcrun stapler staple "$OUT/Populous TB (Direct3D).app"
 fi
 
 cp "$P/README.md" "$OUT/README.md"
 ZIP="$P/dist/OpenPopTB-MacOS-$VER.zip"
 rm -f "$ZIP"
-(cd "$OUT" && zip -qry "$ZIP" "Populous TB.app" "Populous UW.app" README.md)
+(cd "$OUT" && zip -qry "$ZIP" "Populous TB.app" "Populous UW.app" "Populous TB (Direct3D).app" README.md)
 echo "release: $ZIP"

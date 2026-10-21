@@ -5,12 +5,19 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-21
+### Added
+- The release download includes `Populous TB (Direct3D).app`. Like the other apps, it recompiles
+  the player's own `D3DPopTB.exe` (shipped with the GOG version) on first launch.
+- App icons for the release download (an original design drawn by `tools/make_icons.py`; the
+  release still contains nothing taken from the game).
+
 ## [0.2.0] - 2026-10-21
 ### Added
 - Direct3D build (`D3DPopTB.exe`, Direct3D 5): `build.sh` recompiles it into
   `Populous TB (Direct3D).app` when the game folder has the executable. SDL_GPU renders the 3D scene
   at the window's resolution with texture filtering and overlays the 2D draws at game resolution.
-  Validated in the tutorial. The release download does not include it yet. Known differences in
+  Validated in the tutorial. Not in the v0.2.0 download (added in v0.2.1). Known differences in
   `docs/ROADMAP.md`.
 - `tools/d3d_compare.sh`: plays the same scripted path in the software and Direct3D builds and
   writes a side-by-side image.

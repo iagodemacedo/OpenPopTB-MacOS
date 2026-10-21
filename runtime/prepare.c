@@ -347,6 +347,7 @@ int prep_choose_game(const char *exe, char *root, size_t n) {
 static const struct { const char *file, *sha; } known[] = {
     {"popTB.exe", "a46e7c6fa04e13f6cd5accebe32bb5f543f1cd0808bb96b0040f59763251109e"},
     {"popTBUW.exe", "d994142ce0ffb0e5a12ad432cd5def2020d3ca9fb6027a1469d9f7459071e760"},
+    {"D3DPopTB.exe", "815ba8a550f571c38b602cf3386f65aab942667a4a2d9c7096b3660deac2eacd"},
 };
 
 static int have_dev_tools(void) {

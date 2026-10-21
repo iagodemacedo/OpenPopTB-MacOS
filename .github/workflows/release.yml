@@ -49,7 +49,7 @@ jobs:
       - name: Check Gatekeeper
         if: env.SIGN_ID != ''
         run: |
-          for a in "dist/release/Populous TB.app" "dist/release/Populous UW.app"; do
+          for a in "dist/release/Populous TB.app" "dist/release/Populous UW.app" "dist/release/Populous TB (Direct3D).app"; do
             spctl -a -vv -t exec "$a"; xcrun stapler validate "$a"
           done
       - name: Show what was packaged
