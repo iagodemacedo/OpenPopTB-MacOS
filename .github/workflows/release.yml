@@ -16,7 +16,7 @@ jobs:
     # Homebrew bottles target the runner's macOS, which sets the app's minimum macOS version
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tools
         run: brew install cmake ninja sdl3 innoextract
       # Signing and notarization run only when the secrets exist (forks build an ad-hoc signed app)
@@ -58,7 +58,7 @@ jobs:
           plutil -p "$APP/Contents/Info.plist" | grep -E "LSMinimumSystemVersion|CFBundleShortVersionString"
           "$APP/Contents/MacOS/innoextract" --version | head -1
           ls "$APP/Contents/Resources/recomp" "$APP/Contents/Resources/include"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: OpenPopTB-MacOS
           path: dist/OpenPopTB-MacOS-*.zip
