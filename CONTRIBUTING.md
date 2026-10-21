@@ -46,3 +46,9 @@ See [docs/DEBUGGING.md](docs/DEBUGGING.md) for crash symbolication, tracing and 
 - Keep the style of the surrounding code (C11, small helpers, comments explain *why*).
 - Update `CHANGELOG.md` (Unreleased) and the relevant `docs/` file when you learn something new
   about the game: [docs/FINDINGS.md](docs/FINDINGS.md) is the shared memory of the project.
+
+## Releases
+1. Move the `[Unreleased]` entries of `CHANGELOG.md` into a `## [x.y.z] - date` section, written for
+   players: these entries become the GitHub release notes (`tools/release_notes.sh x.y.z` shows them).
+2. Set the version in `CMakeLists.txt`, commit, then push a `vx.y.z` tag. CI builds, signs, notarizes
+   and publishes the release; it fails early if the changelog has no section for the version.

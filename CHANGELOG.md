@@ -4,6 +4,10 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Changed
+- GitHub release notes are the version's `CHANGELOG.md` section plus download instructions
+  (`tools/release_notes.sh`); a tag without a changelog section fails the release.
+- CI uses `actions/checkout@v7` and `actions/upload-artifact@v7` (Node 24).
 
 ## [0.2.1] - 2026-10-21
 ### Added
