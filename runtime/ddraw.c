@@ -1,23 +1,5 @@
 // DirectDraw on top of guest memory; the primary surface is presented via SDL.
-#include "rt.h"
-
-#define COMFN(name, nargs) \
-    static uint32_t name##_i(CPU *R); \
-    static void name(CPU *R) { R->eax = name##_i(R); R->esp += 4 + 4 * ((nargs) + 1); } \
-    static uint32_t name##_i(CPU *R)
-#define THIS ARG(0)
-
-typedef struct Pal { uint32_t obj; uint32_t rgb[256]; uint8_t raw[1024]; } Pal;
-typedef struct Surf {
-    uint32_t obj;
-    int w, h, pitch, bpp;
-    uint32_t mem, caps;
-    int primary;
-    uint32_t back;      // attached back buffer surface
-    uint32_t pal;
-    uint32_t ck_lo, ck_hi; int has_ck;
-    int locked;
-} Surf;
+#include "ddraw.h"
 
 static uint32_t vt_dd1, vt_dd2, vt_surf, vt_pal, vt_clip;
 static int mode_w = 640, mode_h = 480, mode_bpp = 8;
@@ -31,7 +13,7 @@ static uint32_t display_pal;
 
 static void present_surf(Surf *s) {
     if (!s) return;
-    if (s->bpp == 16) { primary = s; plat_present(PTR(s->mem), s->w, s->h, s->pitch, NULL); return; }
+    if (s->bpp == 16) { primary = s; if (!d3d_present(s)) plat_present(PTR(s->mem), s->w, s->h, s->pitch, NULL); return; }
     if (s->bpp != 8) return;
     primary = s;
     if (s->pal) display_pal = s->pal;
@@ -41,20 +23,27 @@ static void present_surf(Surf *s) {
 static void present(void) { present_surf(primary); }
 void ddraw_present(void) { present(); }
 
+static void set_format(Surf *s, int bpp) {
+    static const uint32_t rgb565[4] = {0xf800, 0x07e0, 0x001f, 0};
+    s->bpp = bpp;
+    s->pf_flags = bpp == 8 ? 0x60 : 0x40;   // DDPF_RGB | DDPF_PALETTEINDEXED8, DDPF_RGB
+    memcpy(s->mask, bpp == 16 ? rgb565 : (const uint32_t[4]){0}, sizeof s->mask);
+}
 static uint32_t new_surface(int w, int h, uint32_t caps) {
     Surf *s = calloc(1, sizeof *s);
-    s->w = w; s->h = h; s->bpp = mode_bpp; s->caps = caps;
+    s->w = w; s->h = h; s->caps = caps; s->gen = 1;
+    set_format(s, mode_bpp);
     s->pitch = (w * (s->bpp / 8) + 3) & ~3;
     s->mem = gmalloc((uint32_t)(s->pitch * h + 64));
     s->obj = com_new("IDirectDrawSurface", vt_surf, 0, s);
     return s->obj;
 }
 
-static void fill_pixfmt(uint32_t p, int bpp) {
+static void fill_pixfmt(uint32_t p, const Surf *s) {
     memset(PTR(p), 0, 32);
     wr32(p, 32);
-    if (bpp == 8) { wr32(p + 4, 0x60); wr32(p + 12, 8); }   // DDPF_RGB | DDPF_PALETTEINDEXED8
-    else { wr32(p + 4, 0x40); wr32(p + 12, 16); wr32(p + 16, 0xf800); wr32(p + 20, 0x07e0); wr32(p + 24, 0x001f); }
+    wr32(p + 4, s->pf_flags); wr32(p + 12, s->bpp);
+    for (int i = 0; i < 4; i++) wr32(p + 16 + 4 * i, s->mask[i]);
 }
 static void fill_desc(uint32_t d, Surf *s, uint32_t lp) {
     uint32_t size = rd32(d);
@@ -64,13 +53,13 @@ static void fill_desc(uint32_t d, Surf *s, uint32_t lp) {
     wr32(d + 4, 0x100f | 0x800);   // CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT|LPSURFACE
     wr32(d + 8, s->h); wr32(d + 12, s->w); wr32(d + 16, s->pitch);
     wr32(d + 36, lp);
-    fill_pixfmt(d + 72, s->bpp);
+    fill_pixfmt(d + 72, s);
     wr32(d + 104, s->caps);
 }
 
 // ---------------- IUnknown ----------------
-static void com_addref(CPU *R) { uint32_t o = ARG(0); wr32(o + 4, rd32(o + 4) + 1); R->eax = rd32(o + 4); R->esp += 8; }
-static void com_release(CPU *R) { uint32_t o = ARG(0); uint32_t c = rd32(o + 4); if (c) c--; wr32(o + 4, c); R->eax = c; R->esp += 8; }
+void com_addref(CPU *R) { uint32_t o = ARG(0); wr32(o + 4, rd32(o + 4) + 1); R->eax = rd32(o + 4); R->esp += 8; }
+void com_release(CPU *R) { uint32_t o = ARG(0); uint32_t c = rd32(o + 4); if (c) c--; wr32(o + 4, c); R->eax = c; R->esp += 8; }
 
 // ---------------- IDirectDraw ----------------
 COMFN(dd_QueryInterface, 2) {
@@ -81,6 +70,7 @@ COMFN(dd_QueryInterface, 2) {
         wr32(out, o);
         return 0;
     }
+    if (d1 == 0x6AAE1EC1) { wr32(out, d3d_create()); return 0; }   // IDirect3D2
     WARN("IDirectDraw::QueryInterface unknown iid %08x", d1);
     wr32(out, 0);
     return 0x80004002;
@@ -110,17 +100,20 @@ COMFN(dd_GetCaps, 2) {
 }
 COMFN(dd_GetDisplayMode, 1) {
     uint32_t d = ARG(1);
-    Surf tmp = {.w = mode_w, .h = mode_h, .bpp = mode_bpp, .pitch = mode_w * mode_bpp / 8};
+    Surf tmp = {.w = mode_w, .h = mode_h, .pitch = mode_w * mode_bpp / 8};
+    set_format(&tmp, mode_bpp);
     fill_desc(d, &tmp, 0);
     wr32(d + 4, 0x100e);
     return 0;
 }
 COMFN(dd_EnumDisplayModes, 4) {
     uint32_t ctx = ARG(3), cb = ARG(4);
-    static const int modes[][2] = {{640, 480}, {800, 600}, {1024, 768}, {1280, 1024}};
+    static const int modes[][3] = {{640, 480, 8}, {800, 600, 8}, {1024, 768, 8}, {1280, 1024, 8},
+        {640, 480, 16}, {800, 600, 16}, {1024, 768, 16}, {1280, 1024, 16}};
     uint32_t d = gmalloc(124);
-    for (int i = 0; i < 4; i++) {
-        Surf tmp = {.w = modes[i][0], .h = modes[i][1], .bpp = 8, .pitch = modes[i][0]};
+    for (int i = 0; i < 8; i++) {
+        Surf tmp = {.w = modes[i][0], .h = modes[i][1], .pitch = modes[i][0] * modes[i][2] / 8};
+        set_format(&tmp, modes[i][2]);
         wr32(d, 108);
         fill_desc(d, &tmp, 0);
         wr32(d + 4, 0x100e | 0x20000);   // + REFRESHRATE
@@ -162,13 +155,15 @@ COMFN(dd_CreateSurface, 3) {
         wr32(out, o);
         return 0;
     }
+    if ((fl & 0x1000) && (rd32(d + 76) & 4)) return 0x88760091;   // DDPF_FOURCC (the PowerVR probe): DDERR_INVALIDPIXELFORMAT
     uint32_t o = new_surface(w, h, caps ? caps : 0x40);
     Surf *s = com_native(o);
     if (fl & 0x1000) {   // explicit pixel format
         uint32_t bits = rd32(d + 72 + 12);
         if (bits && bits != (uint32_t)s->bpp) { s->bpp = (int)bits; s->pitch = (w * s->bpp / 8 + 3) & ~3; gfree(s->mem); s->mem = gmalloc((uint32_t)(s->pitch * h + 64)); }
+        if (bits) { s->pf_flags = rd32(d + 76); for (int i = 0; i < 4; i++) s->mask[i] = rd32(d + 88 + 4 * i); }
     }
-    LOG("CreateSurface %dx%d caps=%x", w, h, caps);
+    LOG("CreateSurface %dx%d caps=%x fl=%x pf=%x/%u %x %x %x %x mips=%u", w, h, caps, fl, rd32(d + 76), rd32(d + 84), rd32(d + 88), rd32(d + 92), rd32(d + 96), rd32(d + 100), rd32(d + 24));
     wr32(out, o);
     return 0;
 }
@@ -179,11 +174,22 @@ COMFN(dd_Initialize, 1) { return 0; }
 COMFN(dd_EnumSurfaces, 4) { return 0; }
 COMFN(dd_TestCooperativeLevel, 0) { return 0; }
 COMFN(dd_RestoreAllSurfaces, 0) { return 0; }
+COMFN(dd_GetDeviceIdentifier, 2) {   // DDDEVICEIDENTIFIER: a generic NVIDIA RIVA TNT2
+    uint32_t d = ARG(1);
+    memset(PTR(d), 0, 1064);
+    strcpy(gstr(d), "nv4_disp.dll");
+    strcpy(gstr(d + 512), "NVIDIA RIVA TNT2");
+    wr32(d + 1032, 0x10de); wr32(d + 1036, 0x0028);
+    return 0;
+}
 
 // ---------------- IDirectDrawSurface ----------------
 static Surf *S(uint32_t o) { return com_native(o); }
 
-COMFN(s_QueryInterface, 2) { wr32(ARG(2), THIS); wr32(THIS + 4, rd32(THIS + 4) + 1); return 0; }
+COMFN(s_QueryInterface, 2) {
+    if (rd32(ARG(1)) == 0x93281502) { wr32(ARG(2), d3d_texture_of(THIS)); return 0; }   // IDirect3DTexture2
+    wr32(ARG(2), THIS); wr32(THIS + 4, rd32(THIS + 4) + 1); return 0;
+}
 COMFN(s_GetAttachedSurface, 2) {
     Surf *s = S(THIS);
     if (s->back) { wr32(ARG(2), s->back); return 0; }
@@ -196,7 +202,7 @@ COMFN(s_AddAttachedSurface, 1) { Surf *s = S(THIS); s->back = ARG(1); return 0; 
 COMFN(s_DeleteAttachedSurface, 2) { return 0; }
 COMFN(s_GetCaps, 1) { wr32(ARG(1), S(THIS)->caps); return 0; }
 COMFN(s_GetSurfaceDesc, 1) { Surf *s = S(THIS); fill_desc(ARG(1), s, s->mem); return 0; }
-COMFN(s_GetPixelFormat, 1) { fill_pixfmt(ARG(1), S(THIS)->bpp); return 0; }
+COMFN(s_GetPixelFormat, 1) { fill_pixfmt(ARG(1), S(THIS)); return 0; }
 COMFN(s_Lock, 4) {
     Surf *s = S(THIS);
     if (rt_verbose > 1) LOG("Lock %x %dx%d primary=%d", THIS, s->w, s->h, s->primary);
@@ -210,6 +216,7 @@ COMFN(s_Lock, 4) {
 COMFN(s_Unlock, 1) {
     Surf *s = S(THIS);
     s->locked = 0;
+    s->gen++;
     if (s->primary) present_surf(s);
     return 0;
 }
@@ -231,6 +238,7 @@ COMFN(s_IsLost, 0) { return 0; }
 COMFN(s_Restore, 0) { return 0; }
 COMFN(s_SetPalette, 1) {
     Surf *s = S(THIS);
+    s->gen++;
     s->pal = ARG(1);
     if (s->back) S(s->back)->pal = ARG(1);
     if (s->primary) display_pal = ARG(1);
@@ -312,6 +320,7 @@ COMFN(s_Blt, 5) {
         if (fl & 0x10000) { key = 1; ck = rd32(fx + 92); }
         blit(d, dx, dy, dw, dh, s, sx, sy, sw, sh, key, ck);
     }
+    d->gen++;
     if (d->primary) present_surf(d);
     return 0;
 }
@@ -323,6 +332,7 @@ COMFN(s_BltFast, 5) {
     int sx, sy, sw, sh; rect_of(ARG(4), s, &sx, &sy, &sw, &sh);
     int key = (ARG(5) & 1) && s->has_ck;
     blit(d, x, y, sw, sh, s, sx, sy, sw, sh, key, s->ck_lo);
+    d->gen++;
     if (d->primary) present_surf(d);
     return 0;
 }
@@ -386,7 +396,8 @@ static void build_vtables(void) {
         dd_CreateSurface, dd_DuplicateSurface, dd_EnumDisplayModes, dd_EnumSurfaces, dd_FlipToGDISurface, dd_GetCaps,
         dd_GetDisplayMode, dd_GetFourCCCodes, dd_GetGDISurface, dd_GetMonitorFrequency, dd_GetScanLine,
         dd_GetVerticalBlankStatus, dd_Initialize, dd_RestoreDisplayMode, dd_SetCooperativeLevel, dd_SetDisplayMode1,
-        dd_WaitForVerticalBlank, dd_GetAvailableVidMem, NULL, dd_RestoreAllSurfaces, dd_TestCooperativeLevel, NULL};
+        dd_WaitForVerticalBlank, dd_GetAvailableVidMem, NULL, dd_RestoreAllSurfaces, dd_TestCooperativeLevel,
+        dd_GetDeviceIdentifier};
     vt_dd1 = com_vtbl("IDirectDraw", ddm, 23, ddf);
     ddf[21] = dd_SetDisplayMode2;
     vt_dd2 = com_vtbl("IDirectDraw2", ddm, 28, ddf);

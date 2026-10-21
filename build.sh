@@ -47,6 +47,10 @@ if [ -f "$GAME/popTBUW.exe" ]; then
   echo "== recompiling popTBUW.exe (Undiscovered Worlds)"
   "$PY" -I "$P/recomp/gen.py" "$P/gen_uw" "$GAME/popTBUW.exe" "$GAME/QMixer.dll" "$GAME/WEANETR.dll"
 fi
+if [ -f "$GAME/D3DPopTB.exe" ]; then
+  echo "== recompiling D3DPopTB.exe (Direct3D build)"
+  "$PY" -I "$P/recomp/gen.py" "$P/gen_d3d" "$GAME/D3DPopTB.exe:$P/re/export_d3d/functions.tsv" "$GAME/QMixer.dll" "$GAME/WEANETR.dll"
+fi
 echo "== building and packaging"
 "$P/tools/package.sh" "$GAME"
 echo

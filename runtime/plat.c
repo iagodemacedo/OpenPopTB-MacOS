@@ -1,12 +1,15 @@
 // SDL3 platform: window, frame presentation, events -> Win32 messages and DirectInput.
 #include "rt.h"
 #include "input.h"
+#include "gpu.h"
 #include <SDL3/SDL.h>
 #include <pthread.h>
 
 static SDL_Window *win;
 static SDL_Renderer *ren;
 static SDL_Texture *tex;
+static SDL_Texture *overlay, *hires;   // hybrid present: CPU pixels over the GPU scene image
+static SDL_GPUTexture *hires_src;
 static int tex_w = 640, tex_h = 480;
 static uint32_t *rgba;
 int g_mouse_x = 320, g_mouse_y = 240;
@@ -41,14 +44,14 @@ void plat_script(const char *spec) {
         e->t = t;
         if (!strcmp(kind, "key")) { e->kind = 1; e->a = (int)SDL_GetScancodeFromName(arg); }
         else if (!strcmp(kind, "click") || !strcmp(kind, "rclick")) {
-            // button: move+press at t, release at t+120 ms
+            // button: move at t, press at t+80, release after hold ms (x,y[,hold], default 120)
             // the game applies deltas only at the end of each DirectInput batch: move first, press after
-            int right = kind[0] == 'r';
-            e->kind = 4; sscanf(arg, "%d,%d", &e->a, &e->b);
+            int right = kind[0] == 'r', hold = 120;
+            e->kind = 4; sscanf(arg, "%d,%d,%d", &e->a, &e->b, &hold);
             ScriptEv *d = &script[nscript++];
             *d = *e; d->t = t + 80; d->kind = right ? 3 : 2;
             ScriptEv *u = &script[nscript++];
-            *u = *e; u->t = t + 200; u->kind = right ? 7 : 6;
+            *u = *e; u->t = t + 80 + (uint32_t)hold; u->kind = right ? 7 : 6;
         }
         else if (!strcmp(kind, "move")) { e->kind = 4; sscanf(arg, "%d,%d", &e->a, &e->b); }
         else if (!strcmp(kind, "quit")) e->kind = 5;
@@ -91,7 +94,9 @@ static void script_tick(void) {
 void plat_init(void) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS)) rt_fatal("SDL_Init: %s", SDL_GetError());
     win = SDL_CreateWindow("Populous: The Beginning", 1280, 960, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-    ren = SDL_CreateRenderer(win, NULL);
+    ren = SDL_CreateGPURenderer(NULL, win);
+    if (!ren) ren = SDL_CreateRenderer(win, NULL);
+    LOG("renderer: %s", SDL_GetRendererName(ren));
     SDL_SetRenderVSync(ren, 0);
     SDL_SetRenderLogicalPresentation(ren, tex_w, tex_h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
@@ -102,47 +107,102 @@ void plat_init(void) {
     g_start_ms = now_ms();
 }
 
-static uint32_t last_present;
-void plat_present(const uint8_t *pix, int w, int h, int pitch, const uint32_t *pal) {
-    if (w != tex_w || h != tex_h || !tex) {
-        if (tex) SDL_DestroyTexture(tex);
-        tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
-        SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
-        SDL_SetRenderLogicalPresentation(ren, w, h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-        free(rgba); rgba = malloc((size_t)w * h * 4);
-        tex_w = w; tex_h = h;
+SDL_GPUDevice *plat_gpu_device(int *window_pixel_h) {
+    if (window_pixel_h) SDL_GetWindowSizeInPixels(win, NULL, window_pixel_h);
+    return SDL_GetGPURendererDevice(ren);
+}
+
+static void set_size(int w, int h) {
+    if (w == tex_w && h == tex_h && rgba) return;
+    if (tex) SDL_DestroyTexture(tex);
+    if (overlay) SDL_DestroyTexture(overlay);
+    tex = overlay = NULL;
+    SDL_SetRenderLogicalPresentation(ren, w, h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    free(rgba); rgba = malloc((size_t)w * h * 4);
+    tex_w = w; tex_h = h;
+}
+static SDL_Texture *stream_tex(SDL_Texture **t, SDL_PixelFormat fmt, SDL_BlendMode blend) {
+    if (!*t) {
+        *t = SDL_CreateTexture(ren, fmt, SDL_TEXTUREACCESS_STREAMING, tex_w, tex_h);
+        SDL_SetTextureScaleMode(*t, SDL_SCALEMODE_NEAREST);
+        SDL_SetTextureBlendMode(*t, blend);
     }
+    return *t;
+}
+static inline uint32_t rgb565_to_xrgb(uint32_t c) {
+    uint32_t r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
+    return ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+}
+
+// rgba holds the game-resolution frame (alpha ignored); presents, then takes the requested screenshots
+static uint32_t last_present;
+static void finish_frame(int w, int h) {
+    extern const char *g_shot_path, *g_shot_dir; extern int g_shot_frame, g_shot_every;
+    static int frames;
+    frames++;
+    char p[1024] = "";
+    if (g_shot_dir && g_shot_every && frames % g_shot_every == 0)
+        snprintf(p, sizeof p, "%s/shot_%06u_f%05d.bmp", g_shot_dir, now_ms() - g_start_ms, frames);
+    if (g_shot_path && frames == g_shot_frame) snprintf(p, sizeof p, "%s", g_shot_path);
+    if (p[0]) {
+        // POPTB_SHOT_WINDOW: what the window shows (full output resolution) instead of the game-resolution frame
+        SDL_Surface *s = getenv("POPTB_SHOT_WINDOW") ? SDL_RenderReadPixels(ren, NULL)
+                                                    : SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_XRGB8888, rgba, w * 4);
+        if (s) { SDL_SaveBMP(s, p); SDL_DestroySurface(s); }
+        if (g_shot_path && frames == g_shot_frame) fprintf(stderr, "screenshot saved to %s (frame %d)\n", p, frames);
+    }
+    SDL_RenderPresent(ren);
+    last_present = now_ms();
+    if (rt_verbose > 1) { static int n; if (n++ % 10 == 0) LOG("[%u] present #%d %dx%d", now_ms() % 100000, n, w, h); }
+}
+
+void plat_present(const uint8_t *pix, int w, int h, int pitch, const uint32_t *pal) {
+    set_size(w, h);
     for (int y = 0; y < h; y++) {
         const uint8_t *s = pix + (size_t)y * pitch;
         uint32_t *d = rgba + (size_t)y * w;
         if (pal) for (int x = 0; x < w; x++) d[x] = pal[s[x]];
-        else for (int x = 0; x < w; x++) {   // RGB565
-            uint32_t c = (uint32_t)(s[2 * x] | s[2 * x + 1] << 8);
-            uint32_t r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
-            d[x] = ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+        else for (int x = 0; x < w; x++) d[x] = rgb565_to_xrgb((uint32_t)(s[2 * x] | s[2 * x + 1] << 8));
+    }
+    SDL_Texture *t = stream_tex(&tex, SDL_PIXELFORMAT_XRGB8888, SDL_BLENDMODE_NONE);
+    SDL_UpdateTexture(t, NULL, rgba, w * 4);
+    SDL_RenderClear(ren);
+    SDL_RenderTexture(ren, t, NULL, NULL);
+    finish_frame(w, h);
+}
+
+void plat_present_hybrid(const uint16_t *pix, int w, int h, int pitch, const uint8_t *mask) {
+    set_size(w, h);
+    int iw, ih;
+    SDL_GPUTexture *img = gpu_image(&iw, &ih);
+    if (img != hires_src || (hires && (hires->w != iw || hires->h != ih))) {
+        if (hires) SDL_DestroyTexture(hires);
+        hires = NULL;
+        hires_src = img;
+        if (img) {
+            SDL_PropertiesID p = SDL_CreateProperties();
+            SDL_SetPointerProperty(p, SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER, img);
+            SDL_SetNumberProperty(p, SDL_PROP_TEXTURE_CREATE_FORMAT_NUMBER, SDL_PIXELFORMAT_ABGR8888);
+            SDL_SetNumberProperty(p, SDL_PROP_TEXTURE_CREATE_WIDTH_NUMBER, iw);
+            SDL_SetNumberProperty(p, SDL_PROP_TEXTURE_CREATE_HEIGHT_NUMBER, ih);
+            hires = SDL_CreateTextureWithProperties(ren, p);
+            SDL_DestroyProperties(p);
+            if (!hires) WARN("hybrid present: %s", SDL_GetError());
+            else { SDL_SetTextureScaleMode(hires, SDL_SCALEMODE_LINEAR); SDL_SetTextureBlendMode(hires, SDL_BLENDMODE_NONE); }
         }
     }
-    SDL_UpdateTexture(tex, NULL, rgba, w * 4);
+    for (int y = 0; y < h; y++) {
+        const uint16_t *s = (const uint16_t *)((const uint8_t *)pix + (size_t)y * pitch);
+        const uint8_t *m = mask + (size_t)y * w;
+        uint32_t *d = rgba + (size_t)y * w;
+        for (int x = 0; x < w; x++) d[x] = rgb565_to_xrgb(s[x]) | (m[x] ? 0xff000000u : 0);
+    }
+    SDL_Texture *t = stream_tex(&overlay, SDL_PIXELFORMAT_ARGB8888, SDL_BLENDMODE_BLEND);
+    SDL_UpdateTexture(t, NULL, rgba, w * 4);
     SDL_RenderClear(ren);
-    SDL_RenderTexture(ren, tex, NULL, NULL);
-    SDL_RenderPresent(ren);
-    last_present = now_ms();
-    if (rt_verbose > 1) { static int n; if (n++ % 10 == 0) LOG("[%u] present #%d %dx%d", now_ms() % 100000, n, w, h); }
-    extern const char *g_shot_path, *g_shot_dir; extern int g_shot_frame, g_shot_every;
-    static int frames;
-    frames++;
-    if (g_shot_dir && g_shot_every && frames % g_shot_every == 0) {
-        char p[1024]; snprintf(p, sizeof p, "%s/shot_%06u_f%05d.bmp", g_shot_dir, now_ms() - g_start_ms, frames);
-        SDL_Surface *s = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_XRGB8888, rgba, w * 4);
-        SDL_SaveBMP(s, p);
-        SDL_DestroySurface(s);
-    }
-    if (g_shot_path && frames == g_shot_frame) {
-        SDL_Surface *s = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_XRGB8888, rgba, w * 4);
-        SDL_SaveBMP(s, g_shot_path);
-        SDL_DestroySurface(s);
-        fprintf(stderr, "screenshot saved to %s (frame %d)\n", g_shot_path, frames);
-    }
+    if (hires) SDL_RenderTexture(ren, hires, NULL, NULL);
+    SDL_RenderTexture(ren, t, NULL, NULL);
+    finish_frame(w, h);
 }
 
 // ---- key tables: SDL scancode -> DIK (PC set 1 scancode) and VK ----
@@ -202,10 +262,26 @@ static uint32_t mk_state(void) {
     return s;
 }
 
+// A trackpad tap delivers press and release in the same instant. The input thread drains the whole
+// DirectInput buffer when signalled and the menus act on the button state at the end of it, so such
+// a click is lost; the release is held until the press is at least MIN_CLICK_MS old.
+#define MIN_CLICK_MS 50
+static uint32_t down_ms[3];
+static int up_pending[3];
+static void mouse_button(int b, int down) {
+    static const uint32_t msgs[3][2] = {{0x202, 0x201}, {0x205, 0x204}, {0x208, 0x207}};
+    up_pending[b] = 0;
+    di_mouse_btn[b] = down ? 0x80 : 0;
+    di_push_mouse(12 + b, down ? 0x80 : 0);
+    msgq_post(g_hwnd, msgs[b][down], mk_state(), (uint32_t)(g_mouse_x & 0xffff) | ((uint32_t)g_mouse_y << 16));
+}
+
 void plat_pump(void) {
     SDL_Event e;
     if (!pthread_main_np()) return;   // Cocoa only accepts events on the main thread
     if (nscript) script_tick();
+    for (int b = 0; b < 3; b++)
+        if (up_pending[b] && now_ms() - down_ms[b] >= MIN_CLICK_MS) mouse_button(b, 0);
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
         case SDL_EVENT_QUIT:
@@ -246,10 +322,11 @@ void plat_pump(void) {
             int down = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
             int b = e.button.button == SDL_BUTTON_LEFT ? 0 : e.button.button == SDL_BUTTON_RIGHT ? 1 : e.button.button == SDL_BUTTON_MIDDLE ? 2 : -1;
             if (b < 0) break;
-            di_mouse_btn[b] = down ? 0x80 : 0;
-            di_push_mouse(12 + b, down ? 0x80 : 0);
-            static const uint32_t msgs[3][2] = {{0x202, 0x201}, {0x205, 0x204}, {0x208, 0x207}};
-            msgq_post(g_hwnd, msgs[b][down], mk_state(), (uint32_t)(g_mouse_x & 0xffff) | ((uint32_t)g_mouse_y << 16));
+            if (down) {
+                if (up_pending[b]) mouse_button(b, 0);
+                down_ms[b] = now_ms();
+            } else if (now_ms() - down_ms[b] < MIN_CLICK_MS) { up_pending[b] = 1; break; }
+            mouse_button(b, down);
             break;
         }
         case SDL_EVENT_MOUSE_WHEEL: {

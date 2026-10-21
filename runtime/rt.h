@@ -77,4 +77,5 @@ uint32_t com_vtbl(const char *iface, const char **methods, int n, native_fn *imp
 void plat_init(void);
 void plat_pump(void);          // processes SDL events -> Win32 message queue
 void plat_present(const uint8_t *pix, int w, int h, int pitch, const uint32_t *pal);
+void plat_present_hybrid(const uint16_t *pix, int w, int h, int pitch, const uint8_t *mask);
 extern uint32_t g_hwnd, g_wndproc;

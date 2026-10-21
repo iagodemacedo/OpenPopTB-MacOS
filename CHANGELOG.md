@@ -5,6 +5,21 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-21
+### Added
+- Direct3D build (`D3DPopTB.exe`, Direct3D 5): `build.sh` recompiles it into
+  `Populous TB (Direct3D).app` when the game folder has the executable. SDL_GPU renders the 3D scene
+  at the window's resolution with texture filtering and overlays the 2D draws at game resolution.
+  Validated in the tutorial. The release download does not include it yet. Known differences in
+  `docs/ROADMAP.md`.
+- `tools/d3d_compare.sh`: plays the same scripted path in the software and Direct3D builds and
+  writes a side-by-side image.
+- Input scripts take a hold time: `click:x,y,hold` (default 120 ms).
+
+### Fixed
+- Clicks that press and release in the same instant (trackpad tap) were ignored in the main menu.
+  The release is now held until the press is 50 ms old.
+
 ## [0.1.2] - 2026-10-14
 ### Changed
 - The download is signed with a Developer ID and notarized by Apple: macOS opens the apps without

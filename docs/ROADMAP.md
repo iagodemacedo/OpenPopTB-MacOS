@@ -28,6 +28,17 @@ Why: higher resolutions, texture filtering, smoother look than the software rend
 - Validate scene by scene against the software renderer.
 Effort: days. Risk: medium (many state details that become visual glitches).
 
+Status: Direct3D 5 (`IDirect3D2`, TL vertices). The build recompiles and plays; SDL_GPU renders the
+3D scene at the window's resolution and the CPU's 2D draws are overlaid at game resolution
+(map of the game's D3D usage: `re/d3d_usage.md`). Validated in the tutorial's globe and close-up
+views. Point-sampled draws (HUD, text, sprites) take the texel of the whole game pixel, so they look
+exactly like 640x480 without atlas bleeding. Known differences:
+- No blue ring around the globe: D3DPopTB.exe never draws it (`FUN_0042ea10` has no ring; the
+  software build paints it with the CPU in `FUN_004d4420`).
+- Terrain block edges show as faint lines at high scales: each 32x32 block is its own clamped
+  texture, so bilinear magnification can't blend across blocks. Fixing it needs the blocks' world
+  positions to sample neighbours.
+
 ## 2. Multiplayer (TCP/IP)
 Paused. Progress and next steps in [MULTIPLAYER.md](MULTIPLAYER.md).
 Remaining: finish the join handshake, play a full match between two instances, then Mac vs the
@@ -44,6 +55,10 @@ original Windows game. Effort: 1–3 days. Risk: medium.
 ## 4. Mac experience
 - Remember window/fullscreen state; optional fullscreen by default.
 - Key to release the mouse (today it is captured while the window has focus).
+- Verify trackpad tap-to-click in the main menu on a real trackpad. A tap delivers press and release
+  in the same instant and the menus ignored it; since v0.2.0 the release is held until the press is
+  50 ms old (`MIN_CLICK_MS` in `runtime/plat.c`). Confirmed only with scripted 0 ms clicks
+  (`click:x,y,0`). Check New Game, Options and in-game clicks, and fast double clicks. 5 minutes.
 - Gamepad support through SDL (optional).
 - Universal binary (x86_64) for Intel Macs.
 

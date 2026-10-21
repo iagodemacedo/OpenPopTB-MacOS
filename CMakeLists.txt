@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 set(CMAKE_OSX_DEPLOYMENT_TARGET 12.0 CACHE STRING "Oldest macOS supported")
-project(openpoptb VERSION 0.1.2 LANGUAGES C)
+project(openpoptb VERSION 0.2.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -55,6 +55,7 @@ function(poptb_target name gendir exe outname bundle)
 endfunction()
 poptb_target(poptb gen popTB.exe PopulousTB "Populous TB")
 poptb_target(poptbuw gen_uw popTBUW.exe PopulousUW "Populous UW")
+poptb_target(poptbd3d gen_d3d D3DPopTB.exe PopulousTBD3D "Populous TB (Direct3D)")
 
 # Hand-reimplemented terrain viewer (first approach; kept for reference)
 add_executable(openpoptb-viewer

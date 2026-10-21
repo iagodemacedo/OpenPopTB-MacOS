@@ -20,16 +20,28 @@ Native function names in backtraces are `f_<x86 address>`.
 
 ## Automated runs (no hands needed)
 ```sh
-tools/run.sh <seconds> [--script "<ms>:click:x,y;<ms>:key:Return;<ms>:move:x,y;<ms>:rclick:x,y"] \
+tools/run.sh <seconds> [--script "<ms>:click:x,y[,hold];<ms>:key:Return;<ms>:move:x,y;<ms>:rclick:x,y"] \
              [--shot-dir DIR --shot-every N] [--shot out.bmp --shot-frame N]
 python3 tools/sheet.py DIR sheet.png [step]       # contact sheet of screenshots (needs Pillow)
 POPTB_WAV=out.raw tools/run.sh 40                 # record the mixer output (float32 stereo 44.1 kHz)
 ```
 Coordinates are game pixels (640x480). Intro movies make timing vary between runs; press Escape a
-few times early in the script to skip them.
+few times early in the script to skip them. `click`/`rclick` hold the button for `hold` ms (default
+120); `click:x,y,0` presses and releases at once, like a trackpad tap.
 
 Useful menu coordinates (640x480, TB): New Game (320,152), Multiplayer (320,242),
 Options (320,272), Rolling Demo (320,302). UW: Single Level (320,152), Start (320,438).
+
+## Direct3D build
+```sh
+POPTB_APP=PopulousTBD3D tools/run.sh 30           # the D3D build (D3DPopTB.exe)
+tools/d3d_compare.sh OUT                           # same scripted path in both builds -> OUT/cmp.png
+POPTB_D3D_SCALE=1 ...                              # internal render scale 1-4 (default: window height / 480)
+POPTB_SHOT_WINDOW=1 ...                            # screenshots at window resolution, not game resolution
+POPTB_D3D_DUMP=draws.txt POPTB_D3D_DUMP_MS=29000 ...   # state + vertices of every draw in one frame
+```
+`SDL_AUDIO_DRIVER=dummy` skips CoreAudio for runs that only need pictures (it also gets past a
+machine whose CoreAudio device open hangs).
 
 ## Disassembly and decompilation
 - `tools/dis.py <addr> [n]` (popTB.exe), `tools/disdll.py <dll> <addr> [n]` (annotates imports).

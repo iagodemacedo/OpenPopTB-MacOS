@@ -1,12 +1,13 @@
 #!/bin/sh
-# Builds self-contained dist/Populous TB.app and dist/Populous UW.app (SDL3 bundled, ad-hoc signed).
+# Builds self-contained dist/Populous TB.app, Populous UW.app and Populous TB (Direct3D).app (SDL3 bundled, ad-hoc signed).
 # usage: tools/package.sh [game folder, used for the app icons]
 set -e
 P="$(cd "$(dirname "$0")/.." && pwd)"
 GAME="${1:-${POPTB_GAME:-$(cd "$P/.." && pwd)}}"
 cmake -S "$P" -B "$P/build-rel" -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null
 TARGETS=poptb
-ls "$P"/gen_uw/*.c >/dev/null 2>&1 && TARGETS="poptb poptbuw"
+ls "$P"/gen_uw/*.c >/dev/null 2>&1 && TARGETS="$TARGETS poptbuw"
+ls "$P"/gen_d3d/*.c >/dev/null 2>&1 && TARGETS="$TARGETS poptbd3d"
 ninja -C "$P/build-rel" $TARGETS
 mkdir -p "$P/dist"
 make_app() {  # make_app <.app target> <display name> <.ico icon>
@@ -43,4 +44,5 @@ echo "done: $APP"
 }
 make_app PopulousTB "Populous TB" goggame-1207659027.ico
 [ -d "$P/build-rel/PopulousUW.app" ] && make_app PopulousUW "Populous UW" goggame-1207662583.ico
+[ -d "$P/build-rel/PopulousTBD3D.app" ] && make_app PopulousTBD3D "Populous TB (Direct3D)" goggame-1207659027.ico
 true
