@@ -1,4 +1,8 @@
-# Roadmap
+# Roadmap (upstream, native macOS)
+
+> This is the roadmap inherited from OpenPopTB-MacOS. This fork's work, the browser port, is planned
+> in [wasm/PLAN.md](wasm/PLAN.md). Item 0 (prebuilt releases) no longer applies here: the release
+> packaging, signing and CI were removed from this fork.
 
 Current state: single player of The Beginning and Undiscovered Worlds fully playable, software
 renderer (640x480 / 800x600), audio and FMV working. Effort estimates are rough.

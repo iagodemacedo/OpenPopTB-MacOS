@@ -17,9 +17,9 @@ option(POPTB_GEN_DEBUG "Build the generated code without optimization (exact lin
 file(GLOB RT_SRC CONFIGURE_DEPENDS runtime/*.c)
 # Cached game bundles are rebuilt when anything that shapes the generated code or its ABI changes
 set(POPTB_GEN_ABI "${PROJECT_VERSION}")
-# (prepare.c: compile flags; package_release.sh: capstone/pefile versions; functions.tsv: seeds)
+# (prepare.c: compile flags; functions.tsv: seeds)
 foreach(f recomp/gen.py recomp/image.py re/export/functions.tsv runtime/cpu.h runtime/rt_ops.h
-          runtime/table.h runtime/prepare.c tools/package_release.sh)
+          runtime/table.h runtime/prepare.c)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${f})
   file(SHA256 ${CMAKE_CURRENT_SOURCE_DIR}/${f} h)
   string(SUBSTRING ${h} 0 8 h)
@@ -57,9 +57,3 @@ poptb_target(poptb gen popTB.exe PopulousTB "Populous TB")
 poptb_target(poptbuw gen_uw popTBUW.exe PopulousUW "Populous UW")
 poptb_target(poptbd3d gen_d3d D3DPopTB.exe PopulousTBD3D "Populous TB (Direct3D)")
 
-# Hand-reimplemented terrain viewer (first approach; kept for reference)
-add_executable(openpoptb-viewer
-    src/main.c src/fs.c src/assets.c src/level.c src/render.c src/terrain.c)
-target_include_directories(openpoptb-viewer PRIVATE src)
-target_link_libraries(openpoptb-viewer PRIVATE SDL3::SDL3 m)
-target_compile_options(openpoptb-viewer PRIVATE -Wall -Wextra -Wno-unused-parameter)

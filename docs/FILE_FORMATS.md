@@ -3,7 +3,7 @@
 Target: `popTB.exe` (GOG v1.01). Addresses are Ghidra virtual addresses (image base 0x400000).
 "Observed" = read in the disassembly or verified against the files. "Inferred" = hypothesis.
 
-These notes come from the first, hand-written reimplementation attempt (`src/`). The recompiled
+These notes come from the first, hand-written reimplementation attempt (an upstream terrain viewer, removed from this fork). The recompiled
 port does not need them (the game parses its own files), but they are useful for tools, mods and a
 future hardware renderer.
 

@@ -1,54 +1,34 @@
-# OpenPopTB-MacOS
+# OpenPopTB-WASM
 
-<p align="center">
-  <img src="docs/media/demo.webp" width="640" alt="Populous: The Beginning running natively on an Apple Silicon Mac (Rolling Demo)">
-</p>
+An attempt to run **Populous: The Beginning** (1998) **in the browser** via WebAssembly.
 
-<p align="center">
-  <img src="docs/media/menu.png" width="32%" alt="Main menu">
-  <img src="docs/media/gameplay.png" width="32%" alt="Gameplay">
-  <img src="docs/media/undiscovered-worlds.png" width="32%" alt="Undiscovered Worlds">
-</p>
-<p align="center"><sub>Captured from the native arm64 build (original 640x480 software renderer).</sub></p>
+This is a fork of [OpenPopTB-MacOS](https://github.com/iagodemacedo/OpenPopTB-MacOS), a native
+Apple Silicon port that **statically recompiles** the original Windows executables into C and runs
+them on a small reimplementation of the Win32/DirectX APIs on top of [SDL3](https://libsdl.org).
+The plan is to compile that same generated C and runtime with [Emscripten](https://emscripten.org)
+and present the original software renderer in an HTML canvas, while keeping the native macOS build
+working as the reference implementation.
 
-A native **Apple Silicon (arm64) macOS** port of **Populous: The Beginning** (1998) and its expansion
-**Undiscovered Worlds**, built by **statically recompiling** the original Windows executables into C and
-running them on a small reimplementation of the Win32/DirectX APIs on top of [SDL3](https://libsdl.org).
-
-No emulator, no Wine, no virtual machine: the game's own x86 code is translated ahead of time and
-compiled to a regular arm64 Mac app.
+> **Status: early.** Nothing runs in the browser yet. The generated C compiles and links to
+> WebAssembly; the runtime still needs a compact guest memory layout, browser threading, a web
+> platform layer and file import. Plan and findings: [docs/wasm/PLAN.md](docs/wasm/PLAN.md),
+> [docs/wasm/DISCOVERY-NOTES.md](docs/wasm/DISCOVERY-NOTES.md).
 
 > **You must own the game.** This repository contains **no game code and no game data**. The build
-> reads *your* copy of the game (the GOG release) and recompiles it locally on your Mac.
-> See [Legal](#legal).
+> reads *your* copy of the game (the GOG release) and recompiles it locally. The output is derived
+> from your copy and must not be redistributed or hosted publicly. See [Legal](#legal).
 
-| | |
-|---|---|
-| Status | Single player fully playable (campaign, tutorial, Rolling Demo, Undiscovered Worlds) |
-| Video | Original software renderer, 640x480 and 800x600 |
-| Audio | Sound effects, music and FMV audio |
-| Multiplayer | Not yet (work in progress, see [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md)) |
-| Platform | Apple Silicon; download needs macOS 14+, source build macOS 12+ |
+| | Native macOS build (inherited) | Browser build |
+|---|---|---|
+| Single player | Fully playable (campaign, tutorial, Rolling Demo, Undiscovered Worlds) | Not yet |
+| Video | Original software renderer, 640x480 and 800x600 | Planned: same renderer in a canvas |
+| Audio | Sound effects, music and FMV audio | Planned |
+| Multiplayer | Work in progress upstream ([docs/MULTIPLAYER.md](docs/MULTIPLAYER.md)) | Out of scope |
 
-## Quick start
-### Download (no build needed)
-1. Download `OpenPopTB-MacOS-x.y.z.zip` from the [releases page](https://github.com/iagodemacedo/OpenPopTB-MacOS/releases)
-   and unzip it. It contains `Populous TB.app`, `Populous UW.app` (Undiscovered Worlds) and
-   `Populous TB (Direct3D).app` (hardware rendering at the window's resolution).
-2. Open `Populous TB.app`. The apps are signed and notarized by Apple, so macOS opens them
-   normally (it only asks once to confirm an app downloaded from the internet).
-3. Choose your copy of the game: the GOG offline installer
-   (`setup_populous_the_beginning_*.exe`, keep any `.bin` files next to it) or a folder that
-   already contains `popTB.exe` (GOG Galaxy, CrossOver, Windows copy).
-4. The first launch prepares the game: it recompiles *your* copy for your Mac, about one minute.
-   This needs Apple's free Command Line Tools; if they are missing the app offers to install them
-   (then open the app again). Later launches start in seconds.
-
-The download contains no game code: it is the recompiler and the runtime, and the game code is
-generated on your Mac from your files. The cache lives in
-`~/Library/Application Support/OpenPopTB/cache/` (delete it to force a rebuild); a game unpacked
-from the installer goes to `~/Library/Application Support/OpenPopTB/Game/`. The download needs
-macOS 14 or later (building from source works on macOS 12+).
+## Quick start (native reference build)
+The browser build does not exist yet. The native build is what this fork uses as the reference for
+debugging and comparison. This fork publishes no downloads; for prebuilt Mac apps use
+[upstream's releases](https://github.com/iagodemacedo/OpenPopTB-MacOS/releases).
 
 ### Build from source
 1. Get the game files from your GOG copy: the offline installer
@@ -62,8 +42,8 @@ macOS 14 or later (building from source works on macOS 12+).
    ```
 3. Build:
    ```sh
-   git clone https://github.com/iagodemacedo/OpenPopTB-MacOS.git
-   cd OpenPopTB-MacOS
+   git clone https://github.com/vrepinsky/OpenPopTB-WASM.git
+   cd OpenPopTB-WASM
    ./build.sh "/path/to/Populous The Beginning"
    # or straight from the installer (extracted into game/):
    ./build.sh --installer "/path/to/setup_populous_the_beginning_1.02_d3dfix_(76526).exe"
@@ -72,8 +52,6 @@ macOS 14 or later (building from source works on macOS 12+).
    `dist/Populous UW.app`.
 4. Run `open "dist/Populous TB.app"`. On first launch the app asks for the game folder and
    remembers it (`~/Library/Application Support/OpenPopTB/data_path.txt`).
-
-To build the downloadable apps yourself: `tools/package_release.sh` (needs no game files).
 
 ### Tested game version
 The GOG release, version 1.01. `build.sh` and the app check these SHA-256 hashes and warn if yours differ
@@ -127,12 +105,14 @@ internals so far: [docs/FINDINGS.md](docs/FINDINGS.md).
 | `runtime/` | The C runtime: CPU helpers, memory, threads, Win32/DirectX reimplementation on SDL3; `prepare.c` is the prebuilt app's first-launch recompilation |
 | `tools/` | Debugging tools: run with scripted input and screenshots, crash symbolication, replay, disassembly |
 | `re/` | Reverse-engineering inputs: function list exported from Ghidra (addresses only), export script |
-| `src/` | An earlier hand-written terrain viewer (reference only, not used by the port) |
-| `docs/` | Architecture, findings, file formats, debugging guide, roadmap |
+| `docs/` | Architecture, findings, file formats, debugging guide, upstream roadmap |
+| `docs/wasm/` | WebAssembly port: plan, discovery notes |
 
 ## Contributing
-Help is very welcome: rendering improvements, multiplayer, testing on more levels, docs.
-Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
+Work on the browser port follows [docs/wasm/PLAN.md](docs/wasm/PLAN.md) (backlog in section 10).
+General conventions: [CONTRIBUTING.md](CONTRIBUTING.md). Improvements to the recompiler or the
+native runtime that are not web-specific are best sent upstream to
+[OpenPopTB-MacOS](https://github.com/iagodemacedo/OpenPopTB-MacOS).
 
 ## Legal
 - *Populous: The Beginning* is © 1998 Electronic Arts / Bullfrog Productions. This project is not
@@ -140,10 +120,8 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ROADMAP.md](docs/ROADMAP
 - This repository contains only original code (the recompiler, the runtime and tools) under the
   MIT license, plus a list of function addresses used to seed code discovery. It contains **no**
   game code, game data or assets.
-- The build output (`gen/`, `build*/`, `dist/`) is derived from your copy of the game. **Do not
-  redistribute it.** For the same reason, official releases never contain game-derived code: the
-  prebuilt apps recompile the player's own copy on first launch (`tools/package_release.sh` refuses
-  to package if it finds game-derived files).
+- The build output (`gen/`, `build*/`, `dist/`, and any WebAssembly build) is derived from your copy
+  of the game. **Do not redistribute or host it.**
 
 ## License
 [MIT](LICENSE) for the contents of this repository. The license does not cover Populous: The Beginning,

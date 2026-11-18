@@ -4,6 +4,15 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Fork: OpenPopTB-WASM
+- Forked from OpenPopTB-MacOS 0.2.1 as an attempt at a browser (WebAssembly) port. Plan:
+  `docs/wasm/PLAN.md`.
+- Removed what the fork does not need: release packaging, signing and notarization
+  (`tools/package_release.sh`, `tools/entitlements.plist`, `tools/release_notes.sh`, the GitHub
+  release workflow), app icons (`assets/`, `tools/make_icons.py`), README media, the old
+  hand-written terrain viewer (`src/`) and one-off recompiler census scripts.
+
+### Changed (upstream)
 ### Changed
 - GitHub release notes are the version's `CHANGELOG.md` section plus download instructions
   (`tools/release_notes.sh`); a tag without a changelog section fails the release.

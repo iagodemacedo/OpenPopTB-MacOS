@@ -96,6 +96,10 @@ The game renders 8-bit frames itself (software renderer) into a DirectDraw back 
 scaling, letterboxed). FMVs switch the display to 640x480x16 (RGB565).
 
 ## 3. Two ways to build: from source and the prebuilt app
+> In this fork only the from-source build is used. The prebuilt-app packaging (`tools/package_release.sh`,
+> CI, signing) was removed; `runtime/prepare.c` and the `POPTB_PREBUILT` option remain in the code.
+> For the planned WebAssembly build see [wasm/PLAN.md](wasm/PLAN.md).
+
 - **From source** (`build.sh`): `gen.py` writes `gen*/*.c` and CMake links them into the app together
   with the runtime. `main.c` points `fn_table`/`import_table` at the generated `gen_fn_table`/
   `gen_import_table`.
