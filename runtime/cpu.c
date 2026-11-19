@@ -77,6 +77,7 @@ static gfn fn_find(uint32_t a) {
 }
 
 void dispatch(CPU *R, uint32_t t) {
+    if (__builtin_expect(stats_on, 0)) stats_sample(R);
     if (t >= GUEST_THUNK_BASE && t < GUEST_THUNK_BASE + GUEST_THUNK_MAX * 4) {
         uint32_t i = (t - GUEST_THUNK_BASE) / 4;
         native_fn f = thunks[i];
@@ -209,6 +210,7 @@ void gil_lock(void) {
     gil_contended = gil_waiters > 0;
     pthread_mutex_unlock(&gil_mu);
     gil_t0 = mach_absolute_time();
+    stats_gil_locks++;
 }
 void gil_unlock(void) {
     pthread_mutex_lock(&gil_mu);

@@ -226,6 +226,7 @@ int main(int argc, char **argv) {
     struct sigaction sa = {0};
     sa.sa_sigaction = on_fault; sa.sa_flags = SA_SIGINFO;
     sigaction(SIGSEGV, &sa, NULL); sigaction(SIGBUS, &sa, NULL); sigaction(SIGFPE, &sa, NULL);
+    stats_init();
     mem_init();
     plat_init();
     if (script_spec) plat_script(script_spec);

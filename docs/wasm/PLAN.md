@@ -159,6 +159,25 @@ Populous TB.app (arm64)
   also allocated with `gmalloc` (`k32.c:55–76`).
 - Native peak RSS in the front end is about 147 MB, including SDL and the host [V]. The game
   touches only a small fraction of the 4 GB.
+- Measured with `POPTB_STATS=1` (`runtime/stats.c`), intro → menu → 3 min of Rolling Demo at
+  800×600 [V, 2026-11-19]:
+
+  | Metric | Value |
+  |---|---|
+  | Guest heap high-water | 93.2 MB (`brk_ptr` = 0x06D325C0; stays below QMixer at 0x18000000) |
+  | VirtualAlloc high-water | 8.0 MB |
+  | Guest threads | 6: main, keyboard `0x52c9d0`, mouse `0x52ce90`, 2× QMixer `0x1801a4f0`, FMV reader `0x5490d0` |
+  | Deepest native stack (arm64, sampled in `dispatch`) | 2.3 KB, main thread |
+  | Deepest guest stack | 49.4 KB, main thread (1 MB allocated) |
+  | GIL acquisitions | ~322k in 210 s (~1.5k/s) |
+
+  Manual play session (front end → load a save → campaign level, ~7 min including a save, quit from the menu) [V, 2026-11-19]:
+  - heap 94.0 MB; it jumps 88 → 93 MB at level load, then creeps ~0.15 MB/min;
+  - VirtualAlloc 8 MB, same 6 threads;
+  - native stack 2.6 KB, guest stack 65.7 KB;
+  - ~1.55k GIL acquisitions/s.
+
+  Not yet measured: Undiscovered Worlds, sessions longer than ~10 min.
 
 ### 3.5 Threads and timing [V]
 - `CreateThread` starts a real pthread with a **64 MB native stack** (`k32.c:110`). Each guest
@@ -218,13 +237,15 @@ Browser
 ### 4.1 Guest memory: compact window (recommended)
 - Allocate one aligned block of about 1 GB (`GUEST_WINDOW`) from the Emscripten heap at start-up
   and set `MEM` to it. **The code generator is unchanged.**
-- Move the runtime-controlled regions inside the window. For example:
-  - heap: 0x01000000 to 0x10000000, then 0x18100000 to 0x20000000
-  - VirtualAlloc: 0x20000000 to 0x3F000000
-  - images stay at their fixed bases
+- Move the runtime-controlled regions inside the window. Measured use is a 93 MB heap and 8 MB
+  of VirtualAlloc (§3.4), so a **512 MB window** leaves ample margin:
+  - heap: 0x01000000 to 0x10000000 (240 MB, about 2.5× observed)
+  - VirtualAlloc: 0x19000000 to 0x20000000 (112 MB, about 14× observed)
+  - images stay at their fixed bases (QMixer at 0x18000000; WEANETR at 0x10000000 only with
+    networking, which is out of scope)
 - Thunk addresses and `MAGIC_RET` stay where they are. They are only compared in `dispatch`,
   never dereferenced **[A, verify by grepping and with a bounds-check build]**.
-- Total linear memory is about 1 GB guest + host, staying under 2 GB. That avoids Emscripten's
+- Total linear memory is about 512 MB guest + host, staying well under 2 GB. That avoids Emscripten's
   >2 GB pointer pitfalls. Guard the layout constants with `#ifdef __EMSCRIPTEN__` in `rt.h` and
   keep native unchanged.
 - What is lost:
@@ -314,7 +335,7 @@ input, dummy audio) for Node and CI.
 | Audio | **Medium** | AudioWorklet + ring buffer; latency and autoplay-unlock gesture; FMV pacing depends on the play cursor |
 | Files | **Low–medium** | NODERAWFS trivial; browser needs import UI + OPFS or MEMFS |
 | Performance | **Probably fine [A]** | native rendering is ~7% of a frame, the rest is waiting. Wasm at 1.5–3× native still leaves headroom |
-| Wasm call-stack depth | **Unknown [Q]** | V8 worker stack is ~1 MB; native front end ran with a 512 KB main stack, in-game unmeasured |
+| Wasm call-stack depth | **Probably fine** | native depth 2.3 KB and guest stack 49 KB in the Rolling Demo; to confirm under V8 in M1 |
 
 **Simpler alternatives considered**
 - **Interpreting the x86 in the browser** (berrry-wine-style, MIT, hand-written WAT). Needs no
@@ -353,7 +374,7 @@ input, dummy audio) for Node and CI.
 
 | ID | Risk / question | Impact | How to resolve |
 |---|---|---|---|
-| R1 | Wasm call stack overflow in deep guest call chains (V8 worker stack ~1 MB; big Liftoff frames for huge functions) | crash in game | measure native max stack in game (M0-5); run in Node with default stack; Liftoff vs TurboFan |
+| R1 | Wasm call stack overflow in deep guest call chains (V8 worker stack ~1 MB; big Liftoff frames for huge functions) | crash in game | **Downgraded:** native arm64 depth is only 2.3 KB and the guest stack 49 KB in the Rolling Demo (§3.4), so the call depth is shallow. Confirm in Node (M1) |
 | R2 | GIL + `Atomics.wait` fairness and latency in browser workers (busy-wait start-up handshake, 2 ms quantum) | stalls, low fps | Node harness first, then browser; profile |
 | R3 | Guest wild accesses outside the 1 GB window silently corrupt host memory | heisenbugs | bounds-check build; run scripted scenarios under it |
 | R4 | Thunk/`MAGIC_RET` or other high addresses actually dereferenced | crash | grep plus bounds-check build |
@@ -364,7 +385,7 @@ input, dummy audio) for Node and CI.
 | R9 | Distribution: the Wasm build is game-derived | legal | local build only; document; no hosting |
 | Q1 | Which file-system backend first (OPFS-WasmFS vs MEMFS)? | — | try WasmFS+OPFS in M3; MEMFS fallback |
 | Q2 | Does the Wasm fuzzer match the native result exactly? | CPU confidence | B-3 |
-| Q3 | Heap and VirtualAlloc high-water marks in a long campaign | window size | instrument `brk_ptr`/`virt_ptr` (M0-5) |
+| Q3 | Heap and VirtualAlloc high-water marks in a long campaign | window size | Rolling Demo 93 MB / 8 MB; campaign play 94 MB / 8 MB, growing ~0.15 MB/min after load (§3.4). Save and load covered. Still to check: multi-hour sessions |
 
 ---
 
@@ -438,7 +459,7 @@ Each item is sized for one agent session. "Dep" lists prerequisites.
 | ID | Task | Dep | Done when |
 |---|---|---|---|
 | B-1 | Finish M0: play the first level natively; write `docs/wasm/M0.md` results | — | level completed; notes committed |
-| B-2 | Measure native in-game: max C stack depth per thread, `brk_ptr`/`virt_ptr` high-water, thread count | B-1 | numbers in §7 |
+| B-2 | Measure native in-game: max C stack depth per thread, `brk_ptr`/`virt_ptr` high-water, thread count | B-1 | **done** (`POPTB_STATS=1`, §3.4): Rolling Demo + ~7 min campaign play including load and save |
 | B-3 | Run `tools/fuzz_main.c` under emcc + Node (NODERAWFS) and compare with native | — | identical failing-case set |
 | B-4 | Portable timing: `clock_gettime` in `cpu.c` (native unchanged in behaviour) | — | native passes the CONTRIBUTING smoke test |
 | B-5 | `#ifdef __EMSCRIPTEN__` guards in `main.c` / `cpu.c` (backtrace, signals, dyld, exe path) | — | runtime compiles with emcc |

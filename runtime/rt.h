@@ -56,6 +56,15 @@ void gil_lock(void);
 void gil_unlock(void);
 void gil_yield(void);
 
+// ---- diagnostics (runtime/stats.c, POPTB_STATS=1) ----
+extern int stats_on;
+extern uint64_t stats_gil_locks;
+void stats_init(void);
+void stats_thread_start(uint32_t guest_stack_hi);
+void stats_thread_label(const char *kind);
+void stats_sample(CPU *R);
+void stats_report(void);
+
 // ---- logs ----
 extern int rt_verbose;
 #define LOG(...) do { if (rt_verbose) { fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)

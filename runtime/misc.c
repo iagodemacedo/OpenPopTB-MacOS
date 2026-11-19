@@ -15,7 +15,7 @@ static void *timer_main(void *arg) {
         usleep(t->delay * 1000);
         if (t->dead) break;
         gil_lock();
-        if (!R) R = cpu_new_thread();
+        if (!R) { R = cpu_new_thread(); stats_thread_label("timer"); }
         if (!t->dead) guest_call(R, t->cb, 5, t->id, 0, t->user, 0, 0);
         gil_unlock();
     } while (t->periodic && !t->dead);

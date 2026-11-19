@@ -9,6 +9,18 @@
 - `dispatch: unknown target 0x...` means an indirect call/jump to code the recompiler did not
   discover. Find out who jumps there (`tools/dis.py`) and teach `recomp/image.py` about the pattern.
 
+## Resource statistics
+`POPTB_STATS=1` prints, every 10 s and at exit:
+- guest heap and VirtualAlloc high-water marks;
+- per-thread native and guest stack depth (sampled in `dispatch`);
+- GIL acquisition count.
+
+`runtime/stats.c` implements it. The numbers size the WebAssembly port's memory window and thread
+stacks (`docs/wasm/PLAN.md`).
+```sh
+POPTB_STATS=1 POPTB_GAME=/path/to/game tools/run.sh 120 --script "31000:click:320,302"   # Rolling Demo
+```
+
 ## Crashes
 The crash handler prints the native backtrace and the load address. Map it to x86 addresses:
 ```sh

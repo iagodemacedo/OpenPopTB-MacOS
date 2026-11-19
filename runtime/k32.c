@@ -79,6 +79,7 @@ CPU *cpu_new_thread(void) {
     t->cpu.cc_op = CCOP(CC_EFL, 4);
     thread_setup_tib(t);
     cur_thread = t;
+    stats_thread_start(t->stack_hi);
     return &t->cpu;
 }
 
@@ -90,6 +91,7 @@ static void *thread_main(void *arg) {
     gil_lock();
     CPU *R = cpu_new_thread();
     nthread(R)->handle = ts.h;
+    { char l[16]; snprintf(l, sizeof l, "%08x", ts.start); stats_thread_label(l); }
     Handle *hh = handle_get(ts.h);
     while (hh && hh->suspended) { gil_unlock(); usleep(1000); gil_lock(); }
     uint32_t rc = guest_call(R, ts.start, 1, ts.param);
@@ -137,7 +139,7 @@ SHIM(GetCurrentThreadId, 0) { return nthread(R)->tid; }
 SHIM(GetCurrentProcess, 0) { return 0xffffffff; }
 SHIM(GetCurrentProcessId, 0) { return 0x42; }
 SHIM(TerminateProcess, 2) { fprintf(stderr, "TerminateProcess(%u)\n", ARG(1)); exit((int)ARG(1)); }
-SHIM(ExitProcess, 1) { fprintf(stderr, "ExitProcess(%u)\n", ARG(0)); fflush(stderr); _exit((int)ARG(0)); }
+SHIM(ExitProcess, 1) { stats_report(); fprintf(stderr, "ExitProcess(%u)\n", ARG(0)); fflush(stderr); _exit((int)ARG(0)); }
 
 // TLS
 SHIM(SetCommTimeouts, 2) { return 0; }

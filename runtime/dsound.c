@@ -130,7 +130,7 @@ static void *wave_notify_main(void *arg) {
         }
         pthread_mutex_unlock(&m);
         gil_lock();
-        if (!R) R = cpu_new_thread();
+        if (!R) { R = cpu_new_thread(); stats_thread_label("waveout"); }
         while (done_h != done_t) {
             uint32_t hdr = done_q[done_h]; done_h = (done_h + 1) % 1024;
             WaveDev *w = &wdev;
