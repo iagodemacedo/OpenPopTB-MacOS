@@ -100,7 +100,9 @@ static uint32_t fail(CPU *R, int connecting) { set_last_error(R, wsa_err(errno, 
 // Win32 sockaddr {u16 family, u16 port, u32 addr, zero[8]} <-> BSD {u8 len, u8 family, ...}
 static void sa_in(uint32_t ga, struct sockaddr_in *sa) {
     memset(sa, 0, sizeof *sa);
+#ifdef __APPLE__
     sa->sin_len = sizeof *sa;
+#endif
     sa->sin_family = (sa_family_t)rd16(ga);
     sa->sin_port = (in_port_t)rd16(ga + 2);
     sa->sin_addr.s_addr = rd32(ga + 4);
@@ -127,7 +129,9 @@ SHIM(WSAGetLastError, 0) { return nthread(R)->last_error; }
 SHIM(socket, 3) {
     int fd = socket((int)ARG(0), (int)ARG(1), (int)ARG(2));
     if (fd < 0) { LOG("socket(%u,%u,%u) failed: %s", ARG(0), ARG(1), ARG(2), strerror(errno)); set_last_error(R, wsa_err(errno, 0)); return INVALID_SOCK; }
+#ifdef SO_NOSIGPIPE
     int one = 1; setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+#endif
     uint32_t h = sock_new(fd);
     LOG("socket(%u,%u,%u) -> %x (fd %d)", ARG(0), ARG(1), ARG(2), h, fd);
     return h;
@@ -172,7 +176,9 @@ SHIM(accept, 3) {
     gil_lock();
     if (sock_leave(k)) { if (c >= 0) close(c); set_last_error(R, 10004); return INVALID_SOCK; }
     if (c < 0) { errno = e; set_last_error(R, wsa_err(errno, 0)); return INVALID_SOCK; }
+#ifdef SO_NOSIGPIPE
     int one = 1; setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+#endif
     sa_out(ARG(1), ARG(2), &sa);
     return sock_new(c);
 }

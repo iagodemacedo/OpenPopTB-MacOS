@@ -6,11 +6,26 @@
 #include <stdbool.h>
 
 // ---- guest address space layout ----
+// POPTB_GUEST_WINDOW (default on WebAssembly): all guest memory lives in the first GUEST_SPACE bytes
+// instead of 4 GB, so it fits in wasm32 linear memory next to the runtime. Measured use is a 94 MB
+// heap and 8 MB of VirtualAlloc (docs/wasm/PLAN.md §3.4). Thunk addresses and MAGIC_RET stay high:
+// they are only compared in dispatch(), never dereferenced.
+#if defined(__EMSCRIPTEN__) && !defined(POPTB_GUEST_WINDOW)
+#define POPTB_GUEST_WINDOW 1
+#endif
 #define GUEST_IMAGE_BASE 0x00400000u
 #define GUEST_HEAP_BASE  0x01000000u
+#ifdef POPTB_GUEST_WINDOW
+#define GUEST_SPACE      0x20000000ull // 512 MB
+#define GUEST_HEAP_END   0x10000000u   // below WEANETR (0x10000000) and QMixer (0x18000000)
+#define GUEST_VIRT_BASE  0x19000000u   // VirtualAlloc (64 KB aligned), above QMixer
+#define GUEST_VIRT_END   0x20000000u
+#else
+#define GUEST_SPACE      (1ull << 32)  // the whole 32-bit space
 #define GUEST_HEAP_END   0x70000000u
 #define GUEST_VIRT_BASE  0x70000000u   // VirtualAlloc (64 KB aligned)
 #define GUEST_VIRT_END   0xC0000000u
+#endif
 #define GUEST_THUNK_BASE 0xFE000000u   // fake addresses that dispatch to native functions
 #define GUEST_THUNK_MAX  8192
 #define MAGIC_RET        0xFDFFFFF0u   // return address for native -> guest calls
@@ -70,6 +85,7 @@ extern int rt_verbose;
 #define LOG(...) do { if (rt_verbose) { fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
 #define WARN(...) do { fprintf(stderr, "[warn] " __VA_ARGS__); fputc('\n', stderr); } while (0)
 __attribute__((noreturn)) void rt_fatal(const char *fmt, ...);
+__attribute__((noreturn)) void rt_exit(int code);   // ends the process from any thread
 
 // ---- paths ----
 extern char g_root[1024];      // game folder (original data)
@@ -85,6 +101,7 @@ uint32_t com_vtbl(const char *iface, const char **methods, int n, native_fn *imp
 // ---- window / platform ----
 void plat_init(void);
 void plat_pump(void);          // processes SDL events -> Win32 message queue
+void plat_quit(void);          // shuts SDL down before exiting (WebAssembly only, see rt_exit)
 void plat_present(const uint8_t *pix, int w, int h, int pitch, const uint32_t *pal);
 void plat_present_hybrid(const uint16_t *pix, int w, int h, int pitch, const uint8_t *mask);
 extern uint32_t g_hwnd, g_wndproc;

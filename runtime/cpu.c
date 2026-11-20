@@ -4,10 +4,20 @@
 #include <stdarg.h>
 #include <pthread.h>
 #include <sched.h>
-#include <mach/mach_time.h>
-#include <execinfo.h>
+#include <time.h>
 #include <unistd.h>
+#ifndef __EMSCRIPTEN__
+#include <execinfo.h>
 #include <mach-o/dyld.h>
+#else
+#include <emscripten.h>
+#endif
+
+// monotonic clock in nanoseconds (portable replacement for mach_absolute_time)
+static inline uint64_t mono_ns(void) {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
 
 int rt_verbose = 0;
 
@@ -17,11 +27,30 @@ void rt_fatal(const char *fmt, ...) {
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
+#ifndef __EMSCRIPTEN__
     fprintf(stderr, "load 0x%lx\n", (unsigned long)_dyld_get_image_header(0));
     void *bt[48]; int n = backtrace(bt, 48);
     backtrace_symbols_fd(bt, n < 14 ? n : 14, 2);
+#else
+    emscripten_log(EM_LOG_CONSOLE | EM_LOG_C_STACK, "rt_fatal");
+#endif
     fflush(stderr);
+#ifdef __EMSCRIPTEN__
+    emscripten_force_exit(3);
+#endif
     _exit(3);
+}
+
+// A WebAssembly program whose main() runs in a worker (PROXY_TO_PTHREAD) is not ended by exit()
+// from a guest thread, and an open SDL audio device keeps Node alive even after
+// emscripten_force_exit; so SDL is shut down first
+void rt_exit(int code) {
+    fflush(stdout); fflush(stderr);
+#ifdef __EMSCRIPTEN__
+    plat_quit();
+    emscripten_force_exit(code);
+#endif
+    exit(code);
 }
 
 // ---- thunks ----
@@ -101,10 +130,8 @@ void rt_cpuid(CPU *R) {
     else { R->eax = 0x543; R->ebx = 0; R->ecx = 0; R->edx = 0x000001bf; }   // no MMX: forces pure x86 paths
 }
 uint64_t rt_rdtsc(void) {
-    static mach_timebase_info_data_t tb;
-    if (!tb.denom) mach_timebase_info(&tb);
     // simulates a 1 GHz clock (the game measures the CPU via rdtsc to pick the detail level)
-    return mach_absolute_time() * tb.numer / tb.denom;
+    return mono_ns();
 }
 
 // ---- native -> guest call ----
@@ -209,7 +236,7 @@ void gil_lock(void) {
     gil_waiters--;
     gil_contended = gil_waiters > 0;
     pthread_mutex_unlock(&gil_mu);
-    gil_t0 = mach_absolute_time();
+    gil_t0 = mono_ns();
     stats_gil_locks++;
 }
 void gil_unlock(void) {
@@ -220,11 +247,8 @@ void gil_unlock(void) {
 }
 void gil_yield(void) {
     if (!gil_contended) return;
-    if (!gil_quantum) {
-        mach_timebase_info_data_t tb; mach_timebase_info(&tb);
-        gil_quantum = 2000000ull * tb.denom / tb.numer;   // 2 ms
-    }
-    if (mach_absolute_time() - gil_t0 < gil_quantum) return;
+    if (!gil_quantum) gil_quantum = 2000000ull;   // 2 ms
+    if (mono_ns() - gil_t0 < gil_quantum) return;
     gil_unlock();
     gil_lock();
 }

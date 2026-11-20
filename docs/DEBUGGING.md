@@ -9,6 +9,25 @@
 - `dispatch: unknown target 0x...` means an indirect call/jump to code the recompiler did not
   discover. Find out who jumps there (`tools/dis.py`) and teach `recomp/image.py` about the pattern.
 
+## Build variants
+| CMake option | Effect |
+|---|---|
+| `-DPOPTB_HEADLESS=ON` | No window (`runtime/plat_headless.c`): input only from `--script`, frames only as `--shot*` BMPs, audio through SDL's dummy driver. Same as the WebAssembly build's platform. |
+| `-DPOPTB_GUEST_WINDOW=ON` | The WebAssembly memory layout: all guest memory in the first 512 MB. Natively the rest of the 4 GB is inaccessible, so any guest access outside the window crashes with its guest address. |
+
+## WebAssembly (Node.js)
+```sh
+EMSDK=/path/to/emsdk tools/build_wasm.sh            # build-wasm/PopulousTB.js + .wasm (emsdk needs Python >= 3.10:
+                                                    # EMSDK_PYTHON=/opt/homebrew/bin/python3.13)
+POPTB_GAME=/path/to/game tools/run_wasm.sh 160 --shot-dir /tmp/shots --shot-every 600 \
+    --script "31000:click:320,302;150000:quit"      # Rolling Demo
+```
+Same flags, scripts and `POPTB_*` variables as the native build. It is always headless with the
+512 MB guest window, and reads the game folder straight from disk.
+
+Two native runs of the same script are not pixel-identical at the same frame number: the game
+paces itself on the wall clock. Compare game state (logs, `POPTB_STATS`), not raw screenshots.
+
 ## Resource statistics
 `POPTB_STATS=1` prints, every 10 s and at exit:
 - guest heap and VirtualAlloc high-water marks;

@@ -9,10 +9,15 @@ The plan is to compile that same generated C and runtime with [Emscripten](https
 and present the original software renderer in an HTML canvas, while keeping the native macOS build
 working as the reference implementation.
 
-> **Status: early.** Nothing runs in the browser yet. The generated C compiles and links to
-> WebAssembly; the runtime still needs a compact guest memory layout, browser threading, a web
-> platform layer and file import. Plan and findings: [docs/wasm/PLAN.md](docs/wasm/PLAN.md),
-> [docs/wasm/DISCOVERY-NOTES.md](docs/wasm/DISCOVERY-NOTES.md).
+> **Status: early.** The game runs in WebAssembly **under Node.js** (headless): intro, main menu
+> and the Rolling Demo, with the original software renderer. Nothing runs in a browser yet; that
+> needs a web platform layer (canvas, input, audio) and file import. Plan and findings:
+> [docs/wasm/PLAN.md](docs/wasm/PLAN.md), [docs/wasm/DISCOVERY-NOTES.md](docs/wasm/DISCOVERY-NOTES.md).
+>
+> ```sh
+> EMSDK=/path/to/emsdk tools/build_wasm.sh                       # after ./build.sh has generated gen/
+> POPTB_GAME=/path/to/game tools/run_wasm.sh 60 --shot-dir /tmp/shots --shot-every 300
+> ```
 
 > **You must own the game.** This repository contains **no game code and no game data**. The build
 > reads *your* copy of the game (the GOG release) and recompiles it locally. The output is derived

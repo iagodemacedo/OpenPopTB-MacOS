@@ -7,11 +7,23 @@ uint8_t *MEM;
 static pthread_mutex_t heap_mu = PTHREAD_MUTEX_INITIALIZER;
 
 void mem_init(void) {
+#ifdef __EMSCRIPTEN__
+    // one zeroed block of linear memory; no page protection in WebAssembly
+    void *p = aligned_alloc(0x10000, GUEST_SPACE);
+    if (!p) rt_fatal("could not allocate the %llu MB guest window", GUEST_SPACE >> 20);
+    memset(p, 0, GUEST_SPACE);
+    MEM = p;
+#else
+    // reserves the whole 4 GB; with POPTB_GUEST_WINDOW only the window is accessible, so any guest
+    // access outside it faults (the crash handler prints the guest address)
     void *p = mmap(NULL, 1ull << 32, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
     if (p == MAP_FAILED) rt_fatal("mmap 4GB failed");
     MEM = p;
+    if (GUEST_SPACE < (1ull << 32)) mprotect(MEM + GUEST_SPACE, (1ull << 32) - GUEST_SPACE, PROT_NONE);
     // zero page inaccessible to catch guest null pointers
     mprotect(MEM, 0x10000, PROT_NONE);
+#endif
+    LOG("guest space: %llu MB", GUEST_SPACE >> 20);
 }
 
 // Allocator: blocks with a 16-byte header {size, magic, next_free, pad}.

@@ -13,6 +13,45 @@ Raw discovery log: [DISCOVERY-NOTES.md](DISCOVERY-NOTES.md).
 
 ---
 
+## 0. Current status (2026-11-19)
+
+**M1 reached: the game runs in WebAssembly under Node.js.** The intro videos play, the main menu
+renders, and the Rolling Demo runs in game with the original 3D software renderer. The heap high-water
+mark is identical to native (93.2 MB), it keeps up with the game's frame cap, and it exits cleanly.
+
+```sh
+EMSDK=~/Dev/emsdk EMSDK_PYTHON=/opt/homebrew/bin/python3.13 tools/build_wasm.sh
+POPTB_GAME=~/Dev/OpenPopTB-data/game tools/run_wasm.sh 160 \
+  --shot-dir /tmp/shots --shot-every 600 --script "31000:click:320,302;150000:quit"
+```
+
+What made it work, all keeping the native build unchanged by default:
+- **Portable timing:** `clock_gettime` replaces `mach_absolute_time`.
+- **Platform guards:** `#ifdef __EMSCRIPTEN__` around crash backtraces, signals and the
+  executable-path lookup.
+- **Smaller thread stacks** on Wasm: 2 MB instead of 64 MB.
+- **Compact guest memory:** `POPTB_GUEST_WINDOW`, a 512 MB window.
+- **Headless platform layer:** `runtime/plat_headless.c`, with `POPTB_HEADLESS` as the option.
+- **CMake Emscripten target:** `PROXY_TO_PTHREAD`, `NODERAWFS`, the SDL3 port for audio only.
+- **Clean exit from a worker thread:** `rt_exit`.
+
+Both new options are also tested natively. With the window layout, any guest access outside the
+512 MB window faults, and none did through intro, menu and 2 minutes of the Rolling Demo.
+
+Known gaps and findings:
+- **Pixel-exact screenshot comparison is not possible yet.** Two *native* runs differ at the same
+  frame number, because the game paces itself on the wall clock (`GetTickCount`, `timeGetTime`).
+  Deterministic comparison needs a virtual clock driven by frame count. This is new backlog item
+  B-22, and it replaces the screenshot-diff acceptance criterion of M1.
+- **Wasm "native stack" in `POPTB_STATS` is a different measure.** It reports Emscripten's shadow
+  stack in linear memory, not the V8 call stack. No V8 stack overflow was seen.
+- **Audio in Node uses SDL's dummy driver**, which is enough to pace the videos. There is no real
+  output.
+- **An open SDL audio device keeps Node alive after `emscripten_force_exit`.** `rt_exit` calls
+  `SDL_Quit()` first.
+
+Next: B-3 (fuzzer in Wasm), B-22 (virtual clock), then the browser (B-12 onward).
+
 ## 1. Executive summary
 
 The brief's working hypothesis holds up, and the evidence is stronger than expected:
@@ -461,14 +500,14 @@ Each item is sized for one agent session. "Dep" lists prerequisites.
 | B-1 | Finish M0: play the first level natively; write `docs/wasm/M0.md` results | — | level completed; notes committed |
 | B-2 | Measure native in-game: max C stack depth per thread, `brk_ptr`/`virt_ptr` high-water, thread count | B-1 | **done** (`POPTB_STATS=1`, §3.4): Rolling Demo + ~7 min campaign play including load and save |
 | B-3 | Run `tools/fuzz_main.c` under emcc + Node (NODERAWFS) and compare with native | — | identical failing-case set |
-| B-4 | Portable timing: `clock_gettime` in `cpu.c` (native unchanged in behaviour) | — | native passes the CONTRIBUTING smoke test |
-| B-5 | `#ifdef __EMSCRIPTEN__` guards in `main.c` / `cpu.c` (backtrace, signals, dyld, exe path) | — | runtime compiles with emcc |
-| B-6 | Compact guest layout behind a compile-time option + `GUEST_BOUNDS_CHECK` debug mode; first test it *natively* (window via `mmap` of 1 GB) | B-2 | native game runs with compact layout and bounds checks |
-| B-7 | Configurable thread stack size | — | native unchanged; Wasm uses 2 MB |
-| B-8 | `plat_headless.c` (screenshots, scripted input, no SDL) + dsound dummy backend; usable natively too | — | native headless run produces the same screenshots as `plat.c` |
-| B-9 | `winsock` stub file for Wasm | — | links |
-| B-10 | CMake `POPTB_WEB`/`POPTB_NODE` target via `emcmake` | B-4, B-5, B-9 | `build-node/poptb.js` links with no undefined symbols |
-| B-11 | Node harness: run to the main menu; diff screenshots vs native (`tools/compare_shots.py`) | B-6, B-7, B-8, B-10 | **M1 accepted** |
+| B-4 | Portable timing: `clock_gettime` in `cpu.c` (native unchanged in behaviour) | — | **done** (`mono_ns()` in `cpu.c`) |
+| B-5 | `#ifdef __EMSCRIPTEN__` guards in `main.c` / `cpu.c` (backtrace, signals, dyld, exe path) | — | **done** |
+| B-6 | Compact guest layout behind a compile-time option + `GUEST_BOUNDS_CHECK` debug mode; first test it *natively* (window via `mmap` of 1 GB) | B-2 | **done** (`POPTB_GUEST_WINDOW`, 512 MB; natively the rest of the 4 GB is `PROT_NONE`, which is the bounds check; Rolling Demo clean) |
+| B-7 | Configurable thread stack size | — | **done** (2 MB on Wasm) |
+| B-8 | `plat_headless.c` (screenshots, scripted input, no SDL) + dsound dummy backend; usable natively too | — | **done** (`runtime/plat_headless.c`, `POPTB_HEADLESS`); same game state natively (pixel diff blocked by timing, see B-22) |
+| B-9 | `winsock` stub file for Wasm | — | **done** (`winsock.c` compiles with guards; no stub needed) |
+| B-10 | CMake `POPTB_WEB`/`POPTB_NODE` target via `emcmake` | B-4, B-5, B-9 | **done** (`tools/build_wasm.sh` → `build-wasm/PopulousTB.js`) |
+| B-11 | Node harness: run to the main menu; diff screenshots vs native (`tools/compare_shots.py`) | B-6, B-7, B-8, B-10 | **done except the pixel diff** (`tools/run_wasm.sh`): menu and Rolling Demo run; see §0 |
 | B-12 | Spike: SDL3 Emscripten port from a PROXY_TO_PTHREAD worker vs thin web backend (1 day, throwaway) | B-10 | decision recorded in §4.3 |
 | B-13 | Factor the SDL-event → Win32/DInput translation out of `plat.c` into shared code | B-12 | native unchanged |
 | B-14 | `plat_web.c` + JS host: shared framebuffer → canvas, input ring, Pointer Lock | B-13 | menu visible and clickable |
@@ -479,6 +518,7 @@ Each item is sized for one agent session. "Dep" lists prerequisites.
 | B-19 | Saves persist across reload; settings | B-15 | **M4 (partial)** |
 | B-20 | CI: Linux runner builds the runtime + headless Wasm; game files only on a local runner | B-11 | CI green |
 | B-21 | Web frontend (Vite/TS, minimal), loading/error states, fullscreen | B-18 | **M5** |
+| B-22 | Deterministic mode: virtual clock (`GetTickCount`, `timeGetTime`, `QueryPerformanceCounter`, `rdtsc`, DirectSound play cursor) advanced per frame, so native and Wasm can be compared screenshot by screenshot | B-8 | two native runs produce identical screenshots at equal frame numbers; then native vs Wasm |
 
 Dependency graph (critical path in bold):
 

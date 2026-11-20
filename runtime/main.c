@@ -6,10 +6,13 @@
 #include <signal.h>
 #include <ctype.h>
 #include <sys/mman.h>
+#ifndef __EMSCRIPTEN__
 #include <execinfo.h>
 #include <mach-o/dyld.h>
+#endif
 #include <SDL3/SDL.h>
 
+#ifndef __EMSCRIPTEN__
 static void on_fault(int sig, siginfo_t *si, void *uc) {
     (void)uc;
     uintptr_t a = (uintptr_t)si->si_addr;
@@ -21,6 +24,7 @@ static void on_fault(int sig, siginfo_t *si, void *uc) {
     backtrace_symbols_fd(bt, n, 2);
     _exit(128 + sig);
 }
+#endif
 
 #ifndef POPTB_EXE
 #define POPTB_EXE "popTB.exe"
@@ -37,6 +41,15 @@ int import_table_len;
 int prep_choose_game(const char *exe, char *root, size_t n);
 int prep_from_installer(const char *exe, const char *setup, char *root, size_t n);
 int prep_load_game(const char *root, const char *exe);
+#ifdef __EMSCRIPTEN__
+// runtime/prepare.c is macOS-only (folder dialog, installer unpacking, first-launch recompile)
+int prep_choose_game(const char *exe, char *root, size_t n) { (void)exe; (void)root; (void)n; return 0; }
+int prep_from_installer(const char *exe, const char *setup, char *root, size_t n) {
+    (void)exe; (void)setup; (void)root; (void)n;
+    fprintf(stderr, "--installer is not supported in this build\n");
+    return 0;
+}
+#endif
 
 static uint8_t *read_file(const char *p, size_t *n) {
     FILE *f = fopen(p, "rb");
@@ -168,6 +181,7 @@ static int find_data_dir(const char *given) {
         fclose(f);
         if (cand[0] && has_game(cand)) { snprintf(g_root, sizeof g_root, "%s", cand); return 1; }
     }
+#ifndef __EMSCRIPTEN__
     char exe[1024]; uint32_t sz = sizeof exe;
     if (_NSGetExecutablePath(exe, &sz) == 0) {
         char real[1024]; realpath(exe, real);
@@ -176,6 +190,7 @@ static int find_data_dir(const char *given) {
         for (int up = 0; up < 4; up++) { char *sl = strrchr(p, '/'); if (sl) *sl = 0; }
         if (has_game(real)) { snprintf(g_root, sizeof g_root, "%s", real); goto ok; }
     }
+#endif
     if (has_game(".")) { realpath(".", g_root); goto ok; }
     // ask: game folder or GOG installer (runtime/prepare.c)
     if (!prep_choose_game(POPTB_EXE, cand, sizeof cand)) return 0;
@@ -223,9 +238,11 @@ int main(int argc, char **argv) {
     char exe[1100]; snprintf(exe, sizeof exe, "%s/%s", g_root, POPTB_EXE);
     struct stat st;
     chdir(g_root);
+#ifndef __EMSCRIPTEN__
     struct sigaction sa = {0};
     sa.sa_sigaction = on_fault; sa.sa_flags = SA_SIGINFO;
     sigaction(SIGSEGV, &sa, NULL); sigaction(SIGBUS, &sa, NULL); sigaction(SIGFPE, &sa, NULL);
+#endif
     stats_init();
     mem_init();
     plat_init();

@@ -11,6 +11,13 @@ versions follow [Semantic Versioning](https://semver.org/).
   (`tools/package_release.sh`, `tools/entitlements.plist`, `tools/release_notes.sh`, the GitHub
   release workflow), app icons (`assets/`, `tools/make_icons.py`), README media, the old
   hand-written terrain viewer (`src/`) and one-off recompiler census scripts.
+- `POPTB_STATS=1`: memory and stack statistics (`docs/DEBUGGING.md`).
+- WebAssembly build that runs headless under Node.js (`tools/build_wasm.sh`, `tools/run_wasm.sh`):
+  intro, main menu and Rolling Demo run.
+- New CMake options, also usable natively: `POPTB_HEADLESS` (no window, scripted input and
+  screenshots) and `POPTB_GUEST_WINDOW` (512 MB guest memory, the WebAssembly layout).
+- Runtime portability: monotonic clock instead of `mach_absolute_time`, macOS-only code behind
+  `#ifdef`, smaller thread stacks on WebAssembly, clean exit from any thread (`rt_exit`).
 
 ### Changed (upstream)
 ### Changed
