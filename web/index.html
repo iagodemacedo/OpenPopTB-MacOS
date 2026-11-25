@@ -5,7 +5,7 @@
 <title>OpenPopTB-WASM</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #ccc; font: 14px/1.4 system-ui, sans-serif; }
-  #screen { display: block; width: 100vw; height: 100vh; object-fit: contain; image-rendering: pixelated; }
+  #screen { display: block; width: 100vw; height: 100vh; object-fit: contain; image-rendering: pixelated; cursor: none; }
   #panel { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; }
   #panel.hidden { display: none; }
   #status { white-space: pre-line; max-width: 40em; }
@@ -20,7 +20,7 @@
   <div id="status">Choose your game folder: the folder that contains <code>popTB.exe</code>
     (extracted from the GOG installer).</div>
   <label class="button" id="pick-label">Choose game folder…<input id="pick" type="file" webkitdirectory hidden></label>
-  <small>Files stay in this tab: nothing is uploaded. Sound and input are not implemented yet.</small>
+  <small>Files stay in this tab: nothing is uploaded. No sound yet. Cmd+Enter toggles fullscreen.</small>
 </div>
 <script src="main.js"></script>
 </body>

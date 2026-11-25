@@ -9,9 +9,9 @@ The plan is to compile that same generated C and runtime with [Emscripten](https
 and present the original software renderer in an HTML canvas, while keeping the native macOS build
 working as the reference implementation.
 
-> **Status: early.** The game runs **in Chrome**: intro, main menu and the Rolling Demo render with
-> the original software renderer. **No input and no sound yet**, so it can't be played. It also runs
-> headless under Node.js. Plan and findings: [docs/wasm/PLAN.md](docs/wasm/PLAN.md),
+> **Status: early.** The game runs **in Chrome** with keyboard and mouse, using the original software
+> renderer. **No sound yet**, and saves are lost when the tab is closed. It also runs headless under
+> Node.js. Plan and findings: [docs/wasm/PLAN.md](docs/wasm/PLAN.md),
 > [docs/wasm/DISCOVERY-NOTES.md](docs/wasm/DISCOVERY-NOTES.md).
 >
 > ```sh

@@ -1,6 +1,6 @@
 // Headless platform: no window. Replaces plat.c (POPTB_HEADLESS, and the WebAssembly/Node build).
-// With POPTB_WEB (browser build) each frame is also handed to the page, which draws it on a canvas
-// (web/main.js).
+// With POPTB_WEB (browser build) each frame is also handed to the page, which draws it on a canvas,
+// and the page's keyboard and mouse events arrive through a shared ring buffer (web/main.js).
 // Frames are converted to XRGB like plat.c and written as BMP screenshots (--shot*, same file names);
 // input comes only from --script, injected straight into DirectInput and the Win32 message queue with
 // the same timing as plat.c. Audio goes through SDL's dummy driver unless SDL_AUDIO_DRIVER says
@@ -53,18 +53,27 @@ static int key_lookup(const char *n, uint8_t *dik, uint8_t *vk) {
     }
     return 0;
 }
-static void key_event(uint8_t dik, uint8_t vk, int down) {
-    di_push_key(dik, down);
+// key press/release as plat.c delivers it: DirectInput (not for auto-repeat) + WM_KEYDOWN/UP
+// (WM_SYSKEYDOWN/UP with Alt) + WM_CHAR for the control keys (text arrives separately)
+static void key_event(uint8_t dik, uint8_t vk, int down, int repeat, int alt) {
+    if (!(down && repeat)) di_push_key(dik, down);
     uint32_t lp = 1 | ((uint32_t)(dik & 0x7f) << 16) | ((dik & 0x80) ? 1u << 24 : 0) | (down ? 0 : 0xC0000000u);
-    msgq_post(g_hwnd, down ? 0x100 : 0x101, vk, lp);
+    if (down && repeat) lp |= 1u << 30;
+    msgq_post(g_hwnd, alt ? (down ? 0x104 : 0x105) : (down ? 0x100 : 0x101), vk, lp);
     if (down && (vk == 0x0D || vk == 0x08 || vk == 0x1B || vk == 0x09)) msgq_post(g_hwnd, 0x102, vk, lp);
 }
+static uint32_t mk_state(void) {   // MK_* flags of mouse messages
+    uint32_t s = (di_mouse_btn[0] ? 1 : 0) | (di_mouse_btn[1] ? 2 : 0) | (di_mouse_btn[2] ? 0x10 : 0);
+    if (di_keys[0x2A] || di_keys[0x36]) s |= 4;   // shift
+    if (di_keys[0x1D] || di_keys[0x9D]) s |= 8;   // ctrl
+    return s;
+}
+static uint32_t mouse_lp(void) { return (uint32_t)(g_mouse_x & 0xffff) | ((uint32_t)g_mouse_y << 16); }
 static void mouse_button(int b, int down) {
     static const uint32_t msgs[3][2] = {{0x202, 0x201}, {0x205, 0x204}, {0x208, 0x207}};
     di_mouse_btn[b] = down ? 0x80 : 0;
     di_push_mouse(12 + b, down ? 0x80 : 0);
-    uint32_t mk = (di_mouse_btn[0] ? 1 : 0) | (di_mouse_btn[1] ? 2 : 0) | (di_mouse_btn[2] ? 0x10 : 0);
-    msgq_post(g_hwnd, msgs[b][down], mk, (uint32_t)(g_mouse_x & 0xffff) | ((uint32_t)g_mouse_y << 16));
+    msgq_post(g_hwnd, msgs[b][down], mk_state(), mouse_lp());
 }
 
 // input script, same syntax as plat.c: "ms:key:NAME;ms:click:x,y[,hold];ms:rclick:x,y;ms:move:x,y;ms:quit"
@@ -106,7 +115,7 @@ static void script_tick(void) {
     while (iscript < nscript && script[iscript].t <= t) {
         ScriptEv *e = &script[iscript++];
         switch (e->kind) {
-        case EV_KEY: key_event((uint8_t)e->a, (uint8_t)e->b, 1); key_event((uint8_t)e->a, (uint8_t)e->b, 0); break;
+        case EV_KEY: key_event((uint8_t)e->a, (uint8_t)e->b, 1, 0, 0); key_event((uint8_t)e->a, (uint8_t)e->b, 0, 0, 0); break;
         case EV_MOVE:
             vmove(e->a, e->b);
             msgq_post(g_hwnd, 0x200, 0, (uint32_t)(g_mouse_x & 0xffff) | ((uint32_t)g_mouse_y << 16));
@@ -118,14 +127,93 @@ static void script_tick(void) {
     }
 }
 
+#ifdef POPTB_WEB
+// ---- browser input: web/main.js writes events into this ring from the page's main thread ----
+// layout (int32): [0] head (written by the page), [1] tail (written here), then INPUT_N events of
+// {type, a, b, c}. Single producer, single consumer: plat_pump runs on guest threads under the GIL.
+enum { IN_KEY = 1, IN_MOVE, IN_BUTTON, IN_WHEEL, IN_FOCUS, IN_CHAR };
+#define INPUT_N 1024
+static int32_t input_ring[2 + INPUT_N * 4];
+
+// A trackpad tap delivers press and release in the same instant; the menus act on the button state
+// at the end of a DirectInput batch and miss it. As in plat.c, the release waits until the press is
+// MIN_CLICK_MS old.
+#define MIN_CLICK_MS 50
+static uint32_t down_ms[3];
+static int up_pending[3];
+
+static void web_input_drain(void) {
+    for (int b = 0; b < 3; b++)
+        if (up_pending[b] && now_ms() - down_ms[b] >= MIN_CLICK_MS) { up_pending[b] = 0; mouse_button(b, 0); }
+    int32_t head = __atomic_load_n(&input_ring[0], __ATOMIC_ACQUIRE);
+    int32_t tail = input_ring[1];
+    while (tail != head) {
+        const int32_t *e = &input_ring[2 + tail * 4];
+        int a = e[1], b = e[2], c = e[3];
+        switch (e[0]) {
+        case IN_KEY:   // a = dik, b = vk, c = bit 0 down, bit 1 auto-repeat, bit 2 alt
+            key_event((uint8_t)a, (uint8_t)b, c & 1, (c >> 1) & 1, (c >> 2) & 1);
+            break;
+        case IN_MOVE:  // absolute position in game pixels
+            vmove(a, b);
+            msgq_post(g_hwnd, 0x200, mk_state(), mouse_lp());
+            break;
+        case IN_BUTTON:   // a = 0 left / 1 right / 2 middle, b = down
+            if (a < 0 || a > 2) break;
+            if (b) { if (up_pending[a]) { up_pending[a] = 0; mouse_button(a, 0); } down_ms[a] = now_ms(); mouse_button(a, 1); }
+            else if (now_ms() - down_ms[a] < MIN_CLICK_MS) up_pending[a] = 1;
+            else mouse_button(a, 0);
+            break;
+        case IN_WHEEL:   // a = delta (120 per notch, positive away from the user)
+            di_mouse_dz += a;
+            di_push_mouse(8, (uint32_t)a);
+            msgq_post(g_hwnd, 0x20A, ((uint32_t)(a & 0xffff) << 16) | mk_state(), mouse_lp());
+            break;
+        case IN_FOCUS:   // a = gained
+            if (a) msgq_post(g_hwnd, 0x1c, 1, 0);   // WM_ACTIVATEAPP
+            else memset(di_keys, 0, sizeof di_keys);
+            break;
+        case IN_CHAR:    // printable character typed (WM_CHAR)
+            if (a >= 32 && a < 128) msgq_post(g_hwnd, 0x102, (uint32_t)a, 1);
+            break;
+        }
+        tail = (tail + 1) % INPUT_N;
+    }
+    __atomic_store_n(&input_ring[1], tail, __ATOMIC_RELEASE);
+}
+#endif
+
 void plat_init(void) {
     // only audio: DirectSound mixes into an SDL audio stream
     if (!getenv("SDL_AUDIO_DRIVER")) SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
     if (!SDL_Init(SDL_INIT_AUDIO)) WARN("SDL audio init: %s", SDL_GetError());
     g_start_ms = now_ms();
+#ifdef POPTB_WEB
+    // the writer lives in the page's scope, where HEAP32 is visible (no top-level commas in
+    // EM_ASM code: the C preprocessor would split the macro argument there)
+    MAIN_THREAD_ASYNC_EM_ASM({
+        var base = $0 >> 2;
+        var n = $1;
+        Module.poptbInput = function (type, a, b, c) {
+            var head = Atomics.load(HEAP32, base);
+            var tail = Atomics.load(HEAP32, base + 1);
+            var next = (head + 1) % n;
+            if (next == tail) return false;   // full: the game is not polling
+            var o = base + 2 + head * 4;
+            HEAP32[o] = type; HEAP32[o + 1] = a | 0; HEAP32[o + 2] = b | 0; HEAP32[o + 3] = c | 0;
+            Atomics.store(HEAP32, base, next);
+            return true;
+        };
+    }, input_ring, INPUT_N);
+#endif
     LOG("headless platform");
 }
-void plat_pump(void) { if (nscript) script_tick(); }
+void plat_pump(void) {
+    if (nscript) script_tick();
+#ifdef POPTB_WEB
+    web_input_drain();
+#endif
+}
 void plat_quit(void) { SDL_Quit(); }
 
 SDL_GPUDevice *plat_gpu_device(int *window_pixel_h) { (void)window_pixel_h; return NULL; }

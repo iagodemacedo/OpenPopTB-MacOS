@@ -17,7 +17,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 - WebAssembly build that runs headless under Node.js (`tools/build_wasm.sh`, `tools/run_wasm.sh`):
   intro, main menu and Rolling Demo run.
 - Browser build (`tools/build_wasm.sh --web`, `web/`, `tools/serve_web.py`): the game runs in Chrome
-  and draws on a canvas, loading the player's game folder into the tab. No input or sound yet.
+  and draws on a canvas, loading the player's game folder into the tab. Keyboard and mouse work
+  (Cmd+Enter: fullscreen). No sound yet.
 - New CMake options, also usable natively: `POPTB_HEADLESS` (no window, scripted input and
   screenshots) and `POPTB_GUEST_WINDOW` (512 MB guest memory, the WebAssembly layout).
 - Runtime portability: monotonic clock instead of `mach_absolute_time`, macOS-only code behind

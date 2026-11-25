@@ -75,8 +75,22 @@ How it works (the B-12 decision, Option B in §4.3):
 - **Dev server:** `tools/serve_web.py` sends the COOP/COEP headers, binds to localhost only, and
   with `--out` receives screenshots and console logs. That is how headless Chrome tests run.
 
-Next: input (B-14), then audio (B-17), then file persistence (B-15). B-22 (virtual clock) when exact
-screenshot comparison is needed.
+**Input (2026-11-25):** keyboard and mouse work in the browser, so the game is playable apart from
+sound.
+- **Event path:** `web/main.js` maps `KeyboardEvent.code` to DirectInput scan codes and virtual keys
+  (the same table as `plat.c`), and the pointer position to game pixels through the letterboxed
+  canvas. Events go into a lock-free ring buffer in shared memory that `plat_pump` drains into
+  DirectInput and the Win32 message queue.
+- **Mouse:** absolute, with the game drawing its own cursor and the OS cursor hidden over the
+  canvas. No pointer lock needed.
+- **Details carried over from `plat.c`:** the trackpad-tap fix (`MIN_CLICK_MS`), and `WM_CHAR` for
+  typed text and control keys.
+- **Shortcuts:** Cmd+Enter toggles fullscreen; other Cmd shortcuts stay with the browser.
+- **Tested in headless Chrome** with `?uiscript=`, real DOM events through the whole path: a click
+  starts the Rolling Demo and Escape returns to the menu. Manual play test pending.
+
+Next: audio (B-17), then file persistence (B-15). B-22 (virtual clock) when exact screenshot
+comparison is needed.
 
 ## 1. Executive summary
 
@@ -543,7 +557,7 @@ Each item is sized for one agent session. "Dep" lists prerequisites.
 | B-11 | Node harness: run to the main menu; diff screenshots vs native (`tools/compare_shots.py`) | B-6, B-7, B-8, B-10 | **done except the pixel diff** (`tools/run_wasm.sh`): menu and Rolling Demo run; see §0 |
 | B-12 | Spike: SDL3 Emscripten port from a PROXY_TO_PTHREAD worker vs thin web backend (1 day, throwaway) | B-10 | **done: Option B** (own frame hand-off to a canvas; SDL3 port kept only for dummy audio), see §0 |
 | B-13 | Factor the SDL-event → Win32/DInput translation out of `plat.c` into shared code | B-12 | native unchanged |
-| B-14 | `plat_web.c` + JS host: shared framebuffer → canvas, input ring, Pointer Lock | B-13 | menu visible and clickable |
+| B-14 | `plat_web.c` + JS host: shared framebuffer → canvas, input ring, Pointer Lock | B-13 | **done** (absolute mouse instead of Pointer Lock; ring buffer in `plat_headless.c`, handlers in `web/main.js`); B-13 not needed |
 | B-15 | File import: directory picker → OPFS; mount via WasmFS OPFS (or MEMFS fallback) | B-10 | game files readable in the browser |
 | B-16 | Dev server with COOP/COEP + `index.html` | B-10 | **done** (`tools/serve_web.py`, `web/index.html`) |
 | B-17 | Audio: mixer backend → SAB ring → AudioWorklet; start on user gesture | B-8 | FMV plays at speed with sound; **M2 accepted** |

@@ -34,6 +34,7 @@ EMSDK=/path/to/emsdk tools/build_wasm.sh --web     # build-web/
 python3 tools/serve_web.py --game /path/to/game --out /tmp/web-out
 # http://localhost:8123/?dev                       loads the game folder from the server (no picker)
 # &args=-v  &script=30000:click:320,302             same flags and input scripts as native
+# &uiscript=30000:click:320,302;70000:key:Escape     same input syntax, sent as DOM events (tests the page's input path)
 # &log      console output appended to /tmp/web-out/log.txt
 # &shots=10000,60000                                canvas screenshots (ms after start) into /tmp/web-out
 ```
