@@ -81,8 +81,16 @@ sound.
   (the same table as `plat.c`), and the pointer position to game pixels through the letterboxed
   canvas. Events go into a lock-free ring buffer in shared memory that `plat_pump` drains into
   DirectInput and the Win32 message queue.
-- **Mouse:** absolute, with the game drawing its own cursor and the OS cursor hidden over the
-  canvas. No pointer lock needed.
+- **Mouse:** absolute in a window, with the game drawing its own cursor and the OS cursor hidden
+  over the canvas. In fullscreen (Cmd+Enter) it is relative like the Mac app: Pointer Lock captures
+  it, and Keyboard Lock keeps Escape for the game (hold Escape to leave).
+- **Cursor drift fix:** absolute moves read the game's own cursor (`0x973eb4` in popTB.exe,
+  docs/FINDINGS.md) and send "target − actual", one move at a time once the game has consumed the
+  previous one. So neither the game's cursor resets on mode changes nor input-buffer overflow while
+  loading can make it drift.
+  - **Fallback:** if the variable stops following the mouse (another exe, or
+    `POPTB_NO_GAME_CURSOR=1`), it re-homes after each mode change instead.
+  - **Verified** natively, in Chrome, and by manual play test.
 - **Details carried over from `plat.c`:** the trackpad-tap fix (`MIN_CLICK_MS`), and `WM_CHAR` for
   typed text and control keys.
 - **Shortcuts:** Cmd+Enter toggles fullscreen; other Cmd shortcuts stay with the browser.

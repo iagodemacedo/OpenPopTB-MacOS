@@ -162,7 +162,7 @@ SHIM(EndPaint, 2) { return 1; }
 SHIM(GetForegroundWindow, 0) { return g_hwnd; }
 SHIM(GetActiveWindow, 0) { return g_hwnd; }
 SHIM(SetCursor, 1) { return 0; }
-SHIM(SetCursorPos, 2) { return 1; }
+SHIM(SetCursorPos, 2) { LOG("SetCursorPos(%d, %d)", (int32_t)ARG(0), (int32_t)ARG(1)); return 1; }
 SHIM(LoadIconA, 2) { return 0x1c01; }
 SHIM(LoadCursorA, 2) { return 0x1c02; }
 SHIM(GetDC, 1) { return 0xdc01; }

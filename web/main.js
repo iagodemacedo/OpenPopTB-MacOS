@@ -3,7 +3,9 @@
 //   with ?dev, from the local dev server (tools/serve_web.py --game <folder>)
 // - starts main() (the game runs in workers: PROXY_TO_PTHREAD) and draws its frames on the canvas
 // - sends keyboard and mouse events to the game (Module.poptbInput, a ring buffer read by
-//   runtime/plat_headless.c). The game draws its own cursor; Cmd+Enter toggles fullscreen
+//   runtime/plat_headless.c). The game draws its own cursor. In a window the mouse is absolute; in
+//   fullscreen (Cmd+Enter) it is captured (Pointer Lock) and sends movements only, like the Mac app,
+//   and Keyboard Lock keeps Escape for the game (hold Escape to leave fullscreen)
 // URL parameters: ?dev  load the game from the dev server
 //                 ?args=-v  extra command-line arguments, space separated
 //                 ?script=31000:click:320,302  scripted input (same syntax as the native --script)
@@ -74,7 +76,7 @@ for (let i = 0; i < 10; i++) KEYS['F' + (i + 1)] = [0x3B + i, 0x70 + i];
 'ASDFGHJKL'.split('').forEach((k, i) => { KEYS['Key' + k] = [0x1E + i, k.charCodeAt(0)]; });
 'ZXCVBNM'.split('').forEach((k, i) => { KEYS['Key' + k] = [0x2C + i, k.charCodeAt(0)]; });
 
-const IN_KEY = 1, IN_MOVE = 2, IN_BUTTON = 3, IN_WHEEL = 4, IN_FOCUS = 5, IN_CHAR = 6;
+const IN_KEY = 1, IN_MOVE = 2, IN_BUTTON = 3, IN_WHEEL = 4, IN_FOCUS = 5, IN_CHAR = 6, IN_MOVE_REL = 7, IN_MOUSE_MODE = 8;
 const input = (t, a, b, c) => { if (started && Module.poptbInput) Module.poptbInput(t, a, b, c || 0); };
 
 function onKey(e) {
@@ -82,7 +84,7 @@ function onKey(e) {
   const down = e.type === 'keydown';
   if (down && e.metaKey && e.code === 'Enter') {   // Cmd+Enter: fullscreen, like the Mac app
     e.preventDefault();
-    if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen();
+    toggleFullscreen();
     return;
   }
   if (e.metaKey) return;   // leave the browser's shortcuts (Cmd+R, Cmd+W, ...) alone
@@ -92,10 +94,37 @@ function onKey(e) {
   input(IN_KEY, k[0], k[1], (down ? 1 : 0) | (e.repeat ? 2 : 0) | (e.altKey ? 4 : 0));
   if (down && e.key.length === 1 && !e.ctrlKey && !e.altKey) input(IN_CHAR, e.key.charCodeAt(0));
 }
-// canvas pixel under the pointer (the canvas is letterboxed with object-fit: contain)
+// ---- fullscreen: pointer captured, movements only ----
+let locked = false, fracX = 0, fracY = 0;
+const lockPointer = () => { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} };
+function toggleFullscreen() {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  document.documentElement.requestFullscreen().then(() => {
+    // Escape goes to the game instead of leaving fullscreen (Chrome: hold Escape to leave)
+    if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+  }).catch(() => {});
+  lockPointer();
+}
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement) return;
+  if (document.pointerLockElement) document.exitPointerLock();
+  if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+});
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === canvas;
+  fracX = fracY = 0;
+  input(IN_MOUSE_MODE, locked ? 1 : 0);   // back to absolute: the game re-syncs its cursor
+});
+
+// canvas pixels per CSS pixel (the canvas is letterboxed with object-fit: contain)
+function canvasScale() {
+  const r = canvas.getBoundingClientRect();
+  return Math.min(r.width / canvas.width, r.height / canvas.height);
+}
+// canvas pixel under the pointer
 function gamePos(e) {
   const r = canvas.getBoundingClientRect();
-  const s = Math.min(r.width / canvas.width, r.height / canvas.height);
+  const s = canvasScale();
   const x = (e.clientX - r.left - (r.width - canvas.width * s) / 2) / s;
   const y = (e.clientY - r.top - (r.height - canvas.height * s) / 2) / s;
   return [Math.max(0, Math.min(canvas.width - 1, Math.floor(x))), Math.max(0, Math.min(canvas.height - 1, Math.floor(y)))];
@@ -103,11 +132,23 @@ function gamePos(e) {
 const BUTTON = { 0: 0, 2: 1, 1: 2 };   // DOM button -> left, right, middle
 function onMouse(e) {
   if (!started) return;
-  const [x, y] = gamePos(e);
-  input(IN_MOVE, x, y);
+  if (locked) {
+    if (e.type === 'mousemove') {   // movement in screen pixels -> game pixels, keeping the fractions
+      const s = canvasScale();
+      fracX += e.movementX / s; fracY += e.movementY / s;
+      const dx = Math.trunc(fracX), dy = Math.trunc(fracY);
+      fracX -= dx; fracY -= dy;
+      if (dx || dy) input(IN_MOVE_REL, dx, dy);
+    }
+  } else {
+    const [x, y] = gamePos(e);
+    input(IN_MOVE, x, y);
+  }
   if (e.type === 'mousedown' || e.type === 'mouseup') {
     e.preventDefault();
     if (e.button in BUTTON) input(IN_BUTTON, BUTTON[e.button], e.type === 'mousedown' ? 1 : 0);
+    // fullscreen but not captured (e.g. after switching apps): a click captures it again
+    if (e.type === 'mousedown' && !locked && document.fullscreenElement) lockPointer();
   }
 }
 window.addEventListener('keydown', onKey);

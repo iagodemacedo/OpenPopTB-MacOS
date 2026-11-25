@@ -18,7 +18,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   intro, main menu and Rolling Demo run.
 - Browser build (`tools/build_wasm.sh --web`, `web/`, `tools/serve_web.py`): the game runs in Chrome
   and draws on a canvas, loading the player's game folder into the tab. Keyboard and mouse work
-  (Cmd+Enter: fullscreen). No sound yet.
+  (Cmd+Enter: fullscreen with the mouse captured; hold Escape to leave). Absolute mouse input
+  (browser and input scripts) moves from the game's real cursor position, so it no longer drifts.
+  No sound yet.
 - New CMake options, also usable natively: `POPTB_HEADLESS` (no window, scripted input and
   screenshots) and `POPTB_GUEST_WINDOW` (512 MB guest memory, the WebAssembly layout).
 - Runtime portability: monotonic clock instead of `mach_absolute_time`, macOS-only code behind

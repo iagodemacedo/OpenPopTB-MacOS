@@ -43,6 +43,18 @@ The game measures the CPU with `rdtsc` and picks default detail levels from it. 
   is applied, so a real mouse works but scripted input must move first, click a few ms later.
   The game draws its own cursor; the runtime uses SDL relative mouse mode and converts window
   points to game pixels.
+- The game keeps its own cursor position, accumulated from those deltas and clamped to the screen,
+  and **resets it when the display mode changes** (e.g. 640x480 menu ↔ 800x600 game). It does not
+  call `SetCursorPos`. Relative input (the native app) doesn't notice; absolute input (scripts, the
+  browser's pointer) drifts.
+- The position lives at **`0x973eb4`** (int32 x, then y), the same variable in the front end and in
+  levels. It follows the DirectInput deltas and clamps at the screen edges; found by scanning memory
+  for known positions and confirmed with raw deltas. `plat_headless.c` reads it, so absolute moves
+  send exactly "target − actual".
+- The DirectInput buffer holds 256 entries and drops the oldest when full. A real mouse (~125
+  events/s, 2 entries each) fills it in about a second while the game isn't reading, e.g. while a
+  level loads, and every dropped delta is a permanent offset. That is the likely cause of the drift
+  seen in the browser; sending one move at a time avoids it.
 - Keyboard: DirectInput buffered data with DIK scan codes (= PC set 1); also WM_KEYDOWN/WM_CHAR.
 
 ## Video (FMV)
