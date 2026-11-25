@@ -69,7 +69,7 @@ function(poptb_target name gendir exe outname bundle)
       # are written into the in-memory file system by web/main.js before main() is called
       target_compile_definitions(${name} PRIVATE POPTB_WEB)
       target_link_options(${name} PRIVATE -sENVIRONMENT=web,worker -sINITIAL_MEMORY=1GB
-          -sINVOKE_RUN=0 -sFORCE_FILESYSTEM -sEXPORTED_RUNTIME_METHODS=callMain,FS)
+          -sINVOKE_RUN=0 -sFORCE_FILESYSTEM -sEXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS -lidbfs.js)
     else()
       target_link_options(${name} PRIVATE -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=768MB
           -sMAXIMUM_MEMORY=2GB -sNODERAWFS -sENVIRONMENT=node)

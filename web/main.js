@@ -9,6 +9,9 @@
 // - plays the game's sound: the mixer (runtime/audio_web.c) fills a ring buffer that an AudioWorklet
 //   (audio-worklet.js) plays. Browsers allow sound only after a click or key press: choosing the
 //   game folder counts; with ?dev the first click or key press starts it
+// - keeps saves and settings (the game folder's SAVE directory) in the browser's storage (IndexedDB,
+//   through Emscripten's IDBFS). First run: seeded from the chosen folder's SAVE files; afterwards the
+//   stored copy wins. Written back every few seconds and when the tab is hidden
 // URL parameters: ?dev  load the game from the dev server
 //                 ?args=-v  extra command-line arguments, space separated
 //                 ?script=31000:click:320,302  scripted input (same syntax as the native --script)
@@ -257,7 +260,35 @@ function maybeStart() {
   Module.callMain(args);
 }
 
+// ---- saves ----
+let saveDir = null, seedSaves = false, syncing = false;
+function syncfs(populate) {
+  return new Promise((res, rej) => Module.FS.syncfs(populate, (e) => (e ? rej(e) : res())));
+}
+// mounts browser storage on the SAVE directory (named as in the game folder) and restores it
+async function mountSaves(relPaths) {
+  saveDir = relPaths.map((p) => p.split('/')[0]).find((d) => /^save$/i.test(d)) || 'SAVE';
+  const path = '/game/' + saveDir, FS = Module.FS;
+  FS.mkdirTree(path);
+  FS.mount(Module.IDBFS, {}, path);
+  await syncfs(true);
+  const stored = FS.readdir(path).filter((n) => n !== '.' && n !== '..');
+  seedSaves = stored.length === 0;
+  log(seedSaves ? 'saves: nothing stored yet, starting from the game folder\'s SAVE files'
+                : `saves: ${stored.length} files restored from browser storage`);
+}
+async function flushSaves() {
+  if (!saveDir || syncing) return;
+  syncing = true;
+  try { await syncfs(false); } catch (e) { log('saves: could not store: ' + e); }
+  syncing = false;
+}
+setInterval(() => { if (started) flushSaves(); }, 3000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(); });
+window.addEventListener('pagehide', flushSaves);
+
 function writeFile(rel, data) {
+  if (saveDir && rel.split('/')[0] === saveDir && !seedSaves) return;   // the stored saves win
   const path = '/game/' + rel;
   Module.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
   Module.FS.writeFile(path, data);
@@ -274,6 +305,7 @@ async function loadFromPicker(fileList) {
     return;
   }
   await waitRuntime();
+  await mountSaves(files.map(({ rel }) => rel));
   const total = files.reduce((s, { f }) => s + f.size, 0);
   let done = 0;
   for (const { f, rel } of files) {
@@ -281,6 +313,7 @@ async function loadFromPicker(fileList) {
     done += f.size;
     status.textContent = `Loading game files… ${Math.round(done / total * 100)}%`;
   }
+  if (seedSaves) await flushSaves();
   filesReady = true; maybeStart();
 }
 
@@ -289,6 +322,7 @@ async function loadFromDevServer() {
   const list = await (await fetch('/__game/manifest.json')).json();
   await waitRuntime();
   const files = list.filter(({ path }) => !skip(path));
+  await mountSaves(files.map(({ path }) => path));
   const total = files.reduce((s, { size }) => s + size, 0);
   let done = 0;
   for (const { path, size } of files) {
@@ -299,6 +333,7 @@ async function loadFromDevServer() {
     status.textContent = `Loading game files… ${Math.round(done / total * 100)}%`;
   }
   log(`loaded ${files.length} files, ${(total / 1048576).toFixed(0)} MB`);
+  if (seedSaves) await flushSaves();
   filesReady = true; maybeStart();
 }
 

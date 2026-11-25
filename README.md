@@ -10,7 +10,8 @@ and present the original software renderer in an HTML canvas, while keeping the 
 working as the reference implementation.
 
 > **Status: early.** The game runs **in Chrome** with keyboard and mouse, using the original software
-> renderer, and sound. Saves are lost when the tab is closed (for now). It also runs headless under
+> renderer, and sound. Saves persist in the browser's storage. The game folder is still loaded on
+> each visit. It also runs headless under
 > Node.js. Plan and findings: [docs/wasm/PLAN.md](docs/wasm/PLAN.md),
 > [docs/wasm/DISCOVERY-NOTES.md](docs/wasm/DISCOVERY-NOTES.md).
 >

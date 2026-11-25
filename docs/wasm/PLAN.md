@@ -107,7 +107,17 @@ sound.
   never stall.
 - **Headless Chrome:** 0 underruns, intro paced correctly. Listening test pending.
 
-Next: file persistence (B-15). B-22 (virtual clock) when exact screenshot
+**Saves (2026-11-25):** saves and settings persist in the browser.
+- **Mount:** the game folder's `SAVE` directory is mounted on Emscripten's IDBFS (IndexedDB),
+  `web/main.js`.
+- **First run:** starts from the chosen folder's SAVE files (so existing saves carry over); afterwards
+  the stored copy wins.
+- **Writing back:** every 3 s and when the tab is hidden or closed.
+- **Storage is per origin** (e.g. `http://localhost:8123`), and clearing the site's data deletes it.
+- **Tested in headless Chrome:** the first run seeds 8 files, the second restores them.
+
+Still loaded on every visit: the ~385 MB of game files (picker or dev server). Next options: keep them
+in OPFS so the folder is chosen once; save export/import; a smaller release build. B-22 (virtual clock) when exact screenshot
 comparison is needed.
 
 ## 1. Executive summary
@@ -576,11 +586,11 @@ Each item is sized for one agent session. "Dep" lists prerequisites.
 | B-12 | Spike: SDL3 Emscripten port from a PROXY_TO_PTHREAD worker vs thin web backend (1 day, throwaway) | B-10 | **done: Option B** (own frame hand-off to a canvas; SDL3 port kept only for dummy audio), see §0 |
 | B-13 | Factor the SDL-event → Win32/DInput translation out of `plat.c` into shared code | B-12 | native unchanged |
 | B-14 | `plat_web.c` + JS host: shared framebuffer → canvas, input ring, Pointer Lock | B-13 | **done** (absolute mouse instead of Pointer Lock; ring buffer in `plat_headless.c`, handlers in `web/main.js`); B-13 not needed |
-| B-15 | File import: directory picker → OPFS; mount via WasmFS OPFS (or MEMFS fallback) | B-10 | game files readable in the browser |
+| B-15 | File import: directory picker → OPFS; mount via WasmFS OPFS (or MEMFS fallback) | B-10 | **saves done** (IDBFS on the SAVE directory); game files still loaded each visit (OPFS caching pending) |
 | B-16 | Dev server with COOP/COEP + `index.html` | B-10 | **done** (`tools/serve_web.py`, `web/index.html`) |
-| B-17 | Audio: mixer backend → SAB ring → AudioWorklet; start on user gesture | B-8 | FMV plays at speed with sound; **M2 accepted** |
+| B-17 | Audio: mixer backend → SAB ring → AudioWorklet; start on user gesture | B-8 | **done** (`runtime/audio_web.c`, `web/audio-worklet.js`) |
 | B-18 | Play the tutorial / first level in the browser; fix issues | B-14, B-17 | **M3 accepted** |
-| B-19 | Saves persist across reload; settings | B-15 | **M4 (partial)** |
+| B-19 | Saves persist across reload; settings | B-15 | **saves persist across reloads** (B-15) |
 | B-20 | CI: Linux runner builds the runtime + headless Wasm; game files only on a local runner | B-11 | CI green |
 | B-21 | Web frontend (Vite/TS, minimal), loading/error states, fullscreen | B-18 | **M5** |
 | B-22 | Deterministic mode: virtual clock (`GetTickCount`, `timeGetTime`, `QueryPerformanceCounter`, `rdtsc`, DirectSound play cursor) advanced per frame, so native and Wasm can be compared screenshot by screenshot | B-8 | two native runs produce identical screenshots at equal frame numbers; then native vs Wasm |

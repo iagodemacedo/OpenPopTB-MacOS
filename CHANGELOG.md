@@ -22,6 +22,8 @@ versions follow [Semantic Versioning](https://semver.org/).
   (browser and input scripts) moves from the game's real cursor position, so it no longer drifts.
 - Sound in the browser: sound effects, music and FMV audio through an AudioWorklet. It starts with
   the folder choice (or the first click or key press with `?dev`).
+- Browser saves and settings persist across reloads (IndexedDB). On the first run they start from
+  the chosen folder's SAVE files.
 - New CMake options, also usable natively: `POPTB_HEADLESS` (no window, scripted input and
   screenshots) and `POPTB_GUEST_WINDOW` (512 MB guest memory, the WebAssembly layout).
 - Runtime portability: monotonic clock instead of `mach_absolute_time`, macOS-only code behind
