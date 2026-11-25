@@ -6,6 +6,9 @@
 //   runtime/plat_headless.c). The game draws its own cursor. In a window the mouse is absolute; in
 //   fullscreen (Cmd+Enter) it is captured (Pointer Lock) and sends movements only, like the Mac app,
 //   and Keyboard Lock keeps Escape for the game (hold Escape to leave fullscreen)
+// - plays the game's sound: the mixer (runtime/audio_web.c) fills a ring buffer that an AudioWorklet
+//   (audio-worklet.js) plays. Browsers allow sound only after a click or key press: choosing the
+//   game folder counts; with ?dev the first click or key press starts it
 // URL parameters: ?dev  load the game from the dev server
 //                 ?args=-v  extra command-line arguments, space separated
 //                 ?script=31000:click:320,302  scripted input (same syntax as the native --script)
@@ -192,12 +195,53 @@ function runUiScript(t0) {
   }
 }
 
+// ---- audio ----
+let audioCtx = null, audioRing = null, audioNode = null, workletLoading = null;
+function ensureAudio() {   // call from a user gesture (click, key press, folder choice)
+  if (!audioCtx) {
+    try {
+      audioCtx = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
+      audioCtx.onstatechange = connectAudio;
+    } catch (e) { log('audio: ' + e); return; }
+  }
+  if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+  connectAudio();
+}
+async function connectAudio() {
+  if (!audioCtx || !audioRing) return;
+  const hdr = new Int32Array(audioRing.buffer, audioRing.ptr, 4);
+  if (audioCtx.state !== 'running') { Atomics.store(hdr, 2, 0); return; }   // mixer falls back to the clock
+  if (!workletLoading) workletLoading = audioCtx.audioWorklet.addModule('audio-worklet.js');
+  await workletLoading;
+  if (!audioNode) {
+    audioNode = new AudioWorkletNode(audioCtx, 'poptb-audio',
+      { numberOfInputs: 0, outputChannelCount: [2], processorOptions: audioRing });
+    audioNode.connect(audioCtx.destination);
+    log(`audio: playing at ${audioCtx.sampleRate} Hz`);
+  }
+  if (!Atomics.load(hdr, 2)) {
+    Atomics.store(hdr, 1, Atomics.load(hdr, 0));   // start from an empty ring
+    Atomics.store(hdr, 2, 1);
+  }
+}
+// called by the game when DirectSound starts (runtime/audio_web.c)
+function audioStart(buffer, ptr, n, rate) {
+  audioRing = { buffer, ptr, n };
+  log(`audio: ring ready (${n} frames, ${rate} Hz)`);
+  connectAudio();
+}
+window.addEventListener('pointerdown', ensureAudio);
+window.addEventListener('keydown', ensureAudio);
+if (dev && params.get('audiostats'))   // dev: underrun counter in the log
+  setInterval(() => { if (audioRing) log('audio underruns: ' + new Int32Array(audioRing.buffer, audioRing.ptr, 4)[3]); }, 5000);
+
 // ---- runtime ----
 let runtimeReady = false, filesReady = false, started = false;
 window.Module = {
   print: log,
   printErr: log,
   poptbFrame: drawFrame,
+  poptbAudioStart: audioStart,
   onRuntimeInitialized() { runtimeReady = true; maybeStart(); },
 };
 function maybeStart() {
@@ -265,6 +309,8 @@ if (!crossOriginIsolated) {
   const s = document.createElement('script');
   s.src = 'PopulousTB.js';
   document.body.appendChild(s);
-  if (dev) loadFromDevServer().catch((e) => { status.textContent = 'Dev load failed: ' + e.message; log(String(e)); });
-  else document.getElementById('pick').addEventListener('change', (e) => loadFromPicker(e.target.files));
+  if (dev) {
+    ensureAudio();   // starts only if the browser allows sound without a gesture; else on first click/key
+    loadFromDevServer().catch((e) => { status.textContent = 'Dev load failed: ' + e.message; log(String(e)); });
+  } else document.getElementById('pick').addEventListener('change', (e) => { ensureAudio(); loadFromPicker(e.target.files); });
 }

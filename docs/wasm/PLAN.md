@@ -97,7 +97,17 @@ sound.
 - **Tested in headless Chrome** with `?uiscript=`, real DOM events through the whole path: a click
   starts the Rolling Demo and Escape returns to the menu. Manual play test pending.
 
-Next: audio (B-17), then file persistence (B-15). B-22 (virtual clock) when exact screenshot
+**Sound (2026-11-25):** browser audio output.
+- **Mixer:** `dsound.c`'s mixing is now a plain `dsound_mix()`; the Mac build calls it from the SDL
+  callback as before.
+- **Browser output:** a mixer thread (`runtime/audio_web.c`) keeps ~70 ms queued in a shared ring
+  buffer that an AudioWorklet (`web/audio-worklet.js`) plays at 44.1 kHz.
+- **Before sound is allowed** (browsers wait for a gesture: the folder choice, or the first click or
+  key press with `?dev`), the mixer follows the clock and discards its output, so FMVs and QMixer
+  never stall.
+- **Headless Chrome:** 0 underruns, intro paced correctly. Listening test pending.
+
+Next: file persistence (B-15). B-22 (virtual clock) when exact screenshot
 comparison is needed.
 
 ## 1. Executive summary

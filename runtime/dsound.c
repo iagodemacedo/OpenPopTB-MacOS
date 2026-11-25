@@ -1,4 +1,5 @@
-// Software DirectSound: buffers in guest memory, mixed into an SDL3 audio stream.
+// Software DirectSound: buffers in guest memory, mixed into an SDL3 audio stream (or, in the browser
+// build, into a ring buffer played by an AudioWorklet: runtime/audio_web.c).
 #include "rt.h"
 #include <SDL3/SDL.h>
 #include <sys/time.h>
@@ -146,12 +147,10 @@ static void *wave_notify_main(void *arg) {
     return NULL;
 }
 
-static void SDLCALL audio_cb(void *ud, SDL_AudioStream *s, int additional, int total) {
-    (void)ud; (void)total;
-    int frames = additional / 8;
-    if (frames <= 0) return;
-    static float *mix; static int cap;
-    if (frames > cap) { free(mix); mix = malloc((size_t)frames * 8); cap = frames; }
+// Mixes the next `frames` frames (float32 stereo, OUT_RATE) of every playing buffer into mix and
+// advances their play positions. The audio output calls it at real-time pace: the game paces FMVs
+// and QMixer's streaming on those positions.
+void dsound_mix(float *mix, int frames) {
     memset(mix, 0, (size_t)frames * 8);
     pthread_mutex_lock(&mix_mu);
     for (int i = 0; i < MAXBUF; i++) {
@@ -186,15 +185,29 @@ static void SDLCALL audio_cb(void *ud, SDL_AudioStream *s, int additional, int t
     wave_mix(mix, frames);
     pthread_mutex_unlock(&mix_mu);
     for (int k = 0; k < frames * 2; k++) { float v = mix[k]; mix[k] = v > 1 ? 1 : v < -1 ? -1 : v; }
-    SDL_PutAudioStreamData(s, mix, frames * 8);
     // diagnostic: POPTB_WAV=<file> records the mixer output (float32 stereo 44.1 kHz, headerless)
     static FILE *wav; static int wav_init;
     if (!wav_init) { wav_init = 1; if (getenv("POPTB_WAV")) wav = fopen(getenv("POPTB_WAV"), "wb"); }
     if (wav) { fwrite(mix, 8, (size_t)frames, wav); fflush(wav); }
 }
 
+static void SDLCALL audio_cb(void *ud, SDL_AudioStream *s, int additional, int total) {
+    (void)ud; (void)total;
+    int frames = additional / 8;
+    if (frames <= 0) return;
+    static float *mix; static int cap;
+    if (frames > cap) { free(mix); mix = malloc((size_t)frames * 8); cap = frames; }
+    dsound_mix(mix, frames);
+    SDL_PutAudioStreamData(s, mix, frames * 8);
+}
+
 int audio_init(void) {
     if (audio_ok >= 0) return audio_ok;
+#ifdef POPTB_WEB
+    int web_audio_start(int rate);   // runtime/audio_web.c
+    audio_ok = web_audio_start(OUT_RATE);
+    return audio_ok;
+#endif
     SDL_AudioSpec spec = {SDL_AUDIO_F32, 2, OUT_RATE};
     stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, audio_cb, NULL);
     if (!stream) { WARN("audio unavailable: %s", SDL_GetError()); audio_ok = 0; return 0; }
