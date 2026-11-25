@@ -83,6 +83,8 @@ machine whose CoreAudio device open hangs).
 ```sh
 python3 -m venv .venv && .venv/bin/pip install capstone pefile unicorn pillow
 VENV_PY=.venv/bin/python tools/fuzz.sh 3 12       # instruction-level fuzzer vs Unicorn
+FUZZ_WASM=1 EMSDK=/path/to/emsdk VENV_PY=.venv/bin/python tools/fuzz.sh 3 12   # + the same tests as wasm32 under
+                                                  # Node.js; reports whether the failing forms are identical
 ```
 Function replay (example: the FMV frame decoder):
 ```sh

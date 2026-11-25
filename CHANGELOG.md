@@ -12,6 +12,8 @@ versions follow [Semantic Versioning](https://semver.org/).
   release workflow), app icons (`assets/`, `tools/make_icons.py`), README media, the old
   hand-written terrain viewer (`src/`) and one-off recompiler census scripts.
 - `POPTB_STATS=1`: memory and stack statistics (`docs/DEBUGGING.md`).
+- `FUZZ_WASM=1 tools/fuzz.sh`: runs the instruction fuzzer as wasm32 under Node.js too and compares
+  the failing forms with native (identical).
 - WebAssembly build that runs headless under Node.js (`tools/build_wasm.sh`, `tools/run_wasm.sh`):
   intro, main menu and Rolling Demo run.
 - New CMake options, also usable natively: `POPTB_HEADLESS` (no window, scripted input and

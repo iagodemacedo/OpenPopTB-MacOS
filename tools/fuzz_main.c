@@ -8,6 +8,11 @@
 
 uint8_t *MEM;
 int taken;
+#ifdef __EMSCRIPTEN__
+// wasm32 has no 4 GB mmap: the guest space is one block of GUEST_LIMIT bytes of linear memory, and
+// states touching addresses above it are skipped (counted in the summary)
+#define GUEST_LIMIT 0xF0000000u
+#endif
 typedef void (*tfn)(CPU *);
 extern const tfn fz_fns[];
 extern const int fz_n;
@@ -55,9 +60,14 @@ static void dump_flags(uint32_t f, char *o) {
 int main(int argc, char **argv) {
     load_exe(argv[1]);
     FILE *f = fopen(argv[2], "rb");
+#ifdef __EMSCRIPTEN__
+    MEM = malloc(GUEST_LIMIT);   // fresh linear memory: already zero
+    if (!MEM) { fprintf(stderr, "cannot allocate %u MB\n", GUEST_LIMIT >> 20); return 2; }
+#else
     MEM = mmap(NULL, 1ull << 32, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+#endif
     uint32_t ncases = rd(f);
-    int fails = 0, total = 0, failed_cases = 0;
+    int fails = 0, total = 0, failed_cases = 0, skipped = 0;
     for (uint32_t c = 0; c < ncases; c++) {
         uint32_t tid = rd(f), ncp = rd(f), nst = rd(f);
         uint32_t cps[4];
@@ -76,6 +86,13 @@ int main(int argc, char **argv) {
             for (uint32_t i = 0; i < nw; i++) { wa[i] = rd(f); fread(&wb[i], 1, 1, f); }
             double fout[8]; fread(fout, 8, 8, f);
             uint32_t fsw = rd(f), fmode = rd(f);
+#ifdef __EMSCRIPTEN__
+            int oor = 0;
+            for (uint32_t i = 0; i < ncp; i++) if (cps[i] >= GUEST_LIMIT - 4096) oor = 1;
+            for (uint32_t i = 0; i < npages && i < 16; i++) if (pages[i] >= GUEST_LIMIT - 4096) oor = 1;
+            for (uint32_t i = 0; i < nw; i++) if (wa[i] >= GUEST_LIMIT) oor = 1;
+            if (oor) { skipped++; free(wa); free(wb); continue; }
+#endif
             for (uint32_t i = 0; i < ncp; i++) memcpy(MEM + cps[i], img + (cps[i] - img_base), 4096);
             for (uint32_t i = 0; i < npages && i < 16; i++)
                 for (uint32_t k = 0; k < 4096; k++) MEM[pages[i] + k] = (uint8_t)hash32(pages[i] + k + seed * 0x9E3779B9u);
@@ -133,6 +150,8 @@ int main(int argc, char **argv) {
             free(wa); free(wb);
         }
     }
-    printf("runs %d, failures %d, failing cases %d of %u\n", total, fails, failed_cases, ncases);
+    printf("runs %d, failures %d, failing cases %d of %u", total, fails, failed_cases, ncases);
+    if (skipped) printf(" (skipped %d states above the wasm32 guest limit)", skipped);
+    printf("\n");
     return fails != 0;
 }

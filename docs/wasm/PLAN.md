@@ -50,7 +50,9 @@ Known gaps and findings:
 - **An open SDL audio device keeps Node alive after `emscripten_force_exit`.** `rt_exit` calls
   `SDL_Quit()` first.
 
-Next: B-3 (fuzzer in Wasm), B-22 (virtual clock), then the browser (B-12 onward).
+**B-3 done (2026-11-25):** the instruction fuzzer gives identical results on native and wasm32 (§3.6).
+
+Next: the browser (B-12 onward); B-22 (virtual clock) when exact screenshot comparison is needed.
 
 ## 1. Executive summary
 
@@ -242,8 +244,15 @@ Populous TB.app (arm64)
   instruction form.
   - Native run here: 18,498 runs, 56 failures in 7 of 1,574 cases. These are the documented
     `pushfd` AF bit and invalid-x87 cases.
-  - **`tools/fuzz_main.c` is plain C and should retarget to emcc + Node with no changes.**
-    A Wasm run was started but its result not collected **[Q]**.
+  - `FUZZ_WASM=1` builds the same tests with emcc and runs them under Node.js [V, 2026-11-25]:
+
+    | Runs (native / wasm32) | Failures | Failing forms |
+    |---|---|---|
+    | 18,498 / 18,484 | 56 / 56 | the same 7 on both |
+    | 81,419 / 81,349 | 192 / 192 | the same 14 on both (`pushfd`, `fsqrt`, `fyl2x` only) |
+
+    The wasm32 harness skips the <0.1% of states whose addresses fall above its 3.75 GB guest
+    block.
 - `tools/replay.py`: snapshots memory at function entry/exit and re-runs the function in
   Unicorn, optionally diffing per-instruction register traces.
 - `tools/run.sh`, `--script`, `--shot-dir`/`--shot-every`, `POPTB_WAV`: fully scripted runs
@@ -423,7 +432,7 @@ input, dummy audio) for Node and CI.
 | R8 | SDL3 Emscripten port off the main thread | architecture choice | spike (B-12) |
 | R9 | Distribution: the Wasm build is game-derived | legal | local build only; document; no hosting |
 | Q1 | Which file-system backend first (OPFS-WasmFS vs MEMFS)? | — | try WasmFS+OPFS in M3; MEMFS fallback |
-| Q2 | Does the Wasm fuzzer match the native result exactly? | CPU confidence | B-3 |
+| Q2 | Does the Wasm fuzzer match the native result exactly? | CPU confidence | **Yes** (B-3, §3.6) |
 | Q3 | Heap and VirtualAlloc high-water marks in a long campaign | window size | Rolling Demo 93 MB / 8 MB; campaign play 94 MB / 8 MB, growing ~0.15 MB/min after load (§3.4). Save and load covered. Still to check: multi-hour sessions |
 
 ---
@@ -499,7 +508,7 @@ Each item is sized for one agent session. "Dep" lists prerequisites.
 |---|---|---|---|
 | B-1 | Finish M0: play the first level natively; write `docs/wasm/M0.md` results | — | level completed; notes committed |
 | B-2 | Measure native in-game: max C stack depth per thread, `brk_ptr`/`virt_ptr` high-water, thread count | B-1 | **done** (`POPTB_STATS=1`, §3.4): Rolling Demo + ~7 min campaign play including load and save |
-| B-3 | Run `tools/fuzz_main.c` under emcc + Node (NODERAWFS) and compare with native | — | identical failing-case set |
+| B-3 | Run `tools/fuzz_main.c` under emcc + Node (NODERAWFS) and compare with native | — | **done** (`FUZZ_WASM=1 tools/fuzz.sh`): identical failing forms on native and wasm32, at 18.5k and 81k runs |
 | B-4 | Portable timing: `clock_gettime` in `cpu.c` (native unchanged in behaviour) | — | **done** (`mono_ns()` in `cpu.c`) |
 | B-5 | `#ifdef __EMSCRIPTEN__` guards in `main.c` / `cpu.c` (backtrace, signals, dyld, exe path) | — | **done** |
 | B-6 | Compact guest layout behind a compile-time option + `GUEST_BOUNDS_CHECK` debug mode; first test it *natively* (window via `mmap` of 1 GB) | B-2 | **done** (`POPTB_GUEST_WINDOW`, 512 MB; natively the rest of the 4 GB is `PROT_NONE`, which is the bounds check; Rolling Demo clean) |
