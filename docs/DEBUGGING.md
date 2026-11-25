@@ -28,6 +28,22 @@ Same flags, scripts and `POPTB_*` variables as the native build. It is always he
 Two native runs of the same script are not pixel-identical at the same frame number: the game
 paces itself on the wall clock. Compare game state (logs, `POPTB_STATS`), not raw screenshots.
 
+## Browser
+```sh
+EMSDK=/path/to/emsdk tools/build_wasm.sh --web     # build-web/
+python3 tools/serve_web.py --game /path/to/game --out /tmp/web-out
+# http://localhost:8123/?dev                       loads the game folder from the server (no picker)
+# &args=-v  &script=30000:click:320,302             same flags and input scripts as native
+# &log      console output appended to /tmp/web-out/log.txt
+# &shots=10000,60000                                canvas screenshots (ms after start) into /tmp/web-out
+```
+Headless Chrome works for automated runs:
+```sh
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir=/tmp/chrome-poptb \
+    "http://localhost:8123/?dev&log&shots=30000"
+```
+Its `CVDisplayLinkCreateWithCGDisplay failed` errors are harmless (there is no display).
+
 ## Resource statistics
 `POPTB_STATS=1` prints, every 10 s and at exit:
 - guest heap and VirtualAlloc high-water marks;

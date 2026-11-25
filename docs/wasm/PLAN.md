@@ -52,7 +52,31 @@ Known gaps and findings:
 
 **B-3 done (2026-11-25):** the instruction fuzzer gives identical results on native and wasm32 (§3.6).
 
-Next: the browser (B-12 onward); B-22 (virtual clock) when exact screenshot comparison is needed.
+**First browser output (2026-11-25):** the game runs in Chrome. The intro, the main menu and the
+Rolling Demo render on a canvas, about 30 s from opening the page to the menu (385 MB of game files
+loaded into memory first). Sound and input are not wired up yet.
+
+```sh
+EMSDK=~/Dev/emsdk EMSDK_PYTHON=/opt/homebrew/bin/python3.13 tools/build_wasm.sh --web
+python3 tools/serve_web.py                       # open http://localhost:8123/ and choose the game folder
+python3 tools/serve_web.py --game ~/Dev/OpenPopTB-data/game   # dev: http://localhost:8123/?dev loads it directly
+```
+
+How it works (the B-12 decision, Option B in §4.3):
+- **Game threads:** the game runs in workers (`PROXY_TO_PTHREAD`), with the same headless platform
+  layer as Node plus `POPTB_WEB`.
+- **Frames:** each frame is converted to RGBA and handed to the page with
+  `MAIN_THREAD_ASYNC_EM_ASM`, one in flight at a time; the page draws it with `putImageData`.
+- **SDL3:** only its dummy audio driver is used, which keeps the video timing correct.
+- **Game files:**
+  - `web/main.js` writes them into MEMFS from a folder picker, or from the dev server with `?dev`;
+  - the content stays in the tab's JavaScript memory;
+  - the Wasm memory is a fixed 1 GB, with no growth.
+- **Dev server:** `tools/serve_web.py` sends the COOP/COEP headers, binds to localhost only, and
+  with `--out` receives screenshots and console logs. That is how headless Chrome tests run.
+
+Next: input (B-14), then audio (B-17), then file persistence (B-15). B-22 (virtual clock) when exact
+screenshot comparison is needed.
 
 ## 1. Executive summary
 
@@ -517,11 +541,11 @@ Each item is sized for one agent session. "Dep" lists prerequisites.
 | B-9 | `winsock` stub file for Wasm | — | **done** (`winsock.c` compiles with guards; no stub needed) |
 | B-10 | CMake `POPTB_WEB`/`POPTB_NODE` target via `emcmake` | B-4, B-5, B-9 | **done** (`tools/build_wasm.sh` → `build-wasm/PopulousTB.js`) |
 | B-11 | Node harness: run to the main menu; diff screenshots vs native (`tools/compare_shots.py`) | B-6, B-7, B-8, B-10 | **done except the pixel diff** (`tools/run_wasm.sh`): menu and Rolling Demo run; see §0 |
-| B-12 | Spike: SDL3 Emscripten port from a PROXY_TO_PTHREAD worker vs thin web backend (1 day, throwaway) | B-10 | decision recorded in §4.3 |
+| B-12 | Spike: SDL3 Emscripten port from a PROXY_TO_PTHREAD worker vs thin web backend (1 day, throwaway) | B-10 | **done: Option B** (own frame hand-off to a canvas; SDL3 port kept only for dummy audio), see §0 |
 | B-13 | Factor the SDL-event → Win32/DInput translation out of `plat.c` into shared code | B-12 | native unchanged |
 | B-14 | `plat_web.c` + JS host: shared framebuffer → canvas, input ring, Pointer Lock | B-13 | menu visible and clickable |
 | B-15 | File import: directory picker → OPFS; mount via WasmFS OPFS (or MEMFS fallback) | B-10 | game files readable in the browser |
-| B-16 | Dev server with COOP/COEP + `index.html` | B-10 | page cross-origin isolated |
+| B-16 | Dev server with COOP/COEP + `index.html` | B-10 | **done** (`tools/serve_web.py`, `web/index.html`) |
 | B-17 | Audio: mixer backend → SAB ring → AudioWorklet; start on user gesture | B-8 | FMV plays at speed with sound; **M2 accepted** |
 | B-18 | Play the tutorial / first level in the browser; fix issues | B-14, B-17 | **M3 accepted** |
 | B-19 | Saves persist across reload; settings | B-15 | **M4 (partial)** |

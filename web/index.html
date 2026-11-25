@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenPopTB-WASM</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ccc; font: 14px/1.4 system-ui, sans-serif; }
+  #screen { display: block; width: 100vw; height: 100vh; object-fit: contain; image-rendering: pixelated; }
+  #panel { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; }
+  #panel.hidden { display: none; }
+  #status { white-space: pre-line; max-width: 40em; }
+  button, label.button { font: inherit; padding: 8px 16px; background: #333; color: #eee; border: 1px solid #666; border-radius: 4px; cursor: pointer; }
+  small { color: #888; }
+</style>
+</head>
+<body>
+<canvas id="screen" width="640" height="480"></canvas>
+<div id="panel">
+  <h2>Populous: The Beginning (WebAssembly)</h2>
+  <div id="status">Choose your game folder: the folder that contains <code>popTB.exe</code>
+    (extracted from the GOG installer).</div>
+  <label class="button" id="pick-label">Choose game folder…<input id="pick" type="file" webkitdirectory hidden></label>
+  <small>Files stay in this tab: nothing is uploaded. Sound and input are not implemented yet.</small>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

@@ -7,8 +7,10 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(EMSCRIPTEN)
-  # WebAssembly build (emcmake cmake ...): for now headless under Node.js, with direct access to the
-  # host file system (docs/wasm/PLAN.md, M1). SDL3 comes from the Emscripten port (audio only).
+  # WebAssembly build (emcmake cmake ...): headless under Node.js with direct access to the host file
+  # system, or with POPTB_WEB a browser page (web/) that draws the frames on a canvas.
+  # SDL3 comes from the Emscripten port (audio only).
+  option(POPTB_WEB "Browser build instead of Node.js" OFF)
   set(POPTB_HEADLESS ON CACHE BOOL "" FORCE)
   set(POPTB_SDL3 "--use-port=sdl3")
   add_compile_options(-pthread ${POPTB_SDL3})
@@ -61,9 +63,17 @@ function(poptb_target name gendir exe outname bundle)
   if(EMSCRIPTEN)
     target_link_options(${name} PRIVATE -pthread ${POPTB_SDL3}
         -sPROXY_TO_PTHREAD -sPTHREAD_POOL_SIZE=16 -sEXIT_RUNTIME
-        -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=768MB -sMAXIMUM_MEMORY=2GB
-        -sSTACK_SIZE=1MB -sDEFAULT_PTHREAD_STACK_SIZE=2MB
-        -sNODERAWFS -sENVIRONMENT=node)
+        -sSTACK_SIZE=1MB -sDEFAULT_PTHREAD_STACK_SIZE=2MB)
+    if(POPTB_WEB)
+      # fixed memory: no growth, so the page's views of the shared heap never go stale. Game files
+      # are written into the in-memory file system by web/main.js before main() is called
+      target_compile_definitions(${name} PRIVATE POPTB_WEB)
+      target_link_options(${name} PRIVATE -sENVIRONMENT=web,worker -sINITIAL_MEMORY=1GB
+          -sINVOKE_RUN=0 -sFORCE_FILESYSTEM -sEXPORTED_RUNTIME_METHODS=callMain,FS)
+    else()
+      target_link_options(${name} PRIVATE -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=768MB
+          -sMAXIMUM_MEMORY=2GB -sNODERAWFS -sENVIRONMENT=node)
+    endif()
     target_link_libraries(${name} PRIVATE m)
   else()
     target_link_libraries(${name} PRIVATE SDL3::SDL3 m)

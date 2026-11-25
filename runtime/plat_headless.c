@@ -1,4 +1,6 @@
 // Headless platform: no window. Replaces plat.c (POPTB_HEADLESS, and the WebAssembly/Node build).
+// With POPTB_WEB (browser build) each frame is also handed to the page, which draws it on a canvas
+// (web/main.js).
 // Frames are converted to XRGB like plat.c and written as BMP screenshots (--shot*, same file names);
 // input comes only from --script, injected straight into DirectInput and the Win32 message queue with
 // the same timing as plat.c. Audio goes through SDL's dummy driver unless SDL_AUDIO_DRIVER says
@@ -7,6 +9,10 @@
 #include "input.h"
 #include "gpu.h"
 #include <SDL3/SDL.h>
+#ifdef POPTB_WEB
+#include <emscripten/emscripten.h>
+#include <emscripten/threading.h>
+#endif
 
 int g_mouse_x = 320, g_mouse_y = 240;
 uint32_t g_start_ms;
@@ -138,6 +144,31 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
     fclose(f);
 }
 
+#ifdef POPTB_WEB
+// The game runs in a worker; the page owns the canvas. One frame in flight: the page copies it and
+// clears web_busy, and frames that arrive meanwhile are dropped (the game keeps its own pace).
+static uint8_t *web_fb;
+static int web_fb_size;
+static volatile int web_busy;
+static void web_present(int w, int h) {
+    if (__atomic_load_n(&web_busy, __ATOMIC_ACQUIRE)) return;
+    int n = w * h * 4;
+    if (n > web_fb_size) { free(web_fb); web_fb = malloc((size_t)n); web_fb_size = n; }
+    const uint32_t *s = rgba;
+    uint8_t *d = web_fb;
+    for (int i = 0; i < w * h; i++, d += 4) {   // XRGB -> RGBA bytes (ImageData)
+        uint32_t c = s[i];
+        d[0] = (uint8_t)(c >> 16); d[1] = (uint8_t)(c >> 8); d[2] = (uint8_t)c; d[3] = 255;
+    }
+    __atomic_store_n(&web_busy, 1, __ATOMIC_RELEASE);
+    MAIN_THREAD_ASYNC_EM_ASM({
+        var px = HEAPU8.slice($0, $0 + $1 * $2 * 4);
+        Atomics.store(HEAP32, $3 >> 2, 0);
+        if (Module.poptbFrame) Module.poptbFrame(px, $1, $2);
+    }, web_fb, w, h, &web_busy);
+}
+#endif
+
 static void finish_frame(int w, int h) {
     extern const char *g_shot_path, *g_shot_dir; extern int g_shot_frame, g_shot_every;
     static int frames;
@@ -150,6 +181,9 @@ static void finish_frame(int w, int h) {
         write_bmp(p, rgba, w, h);
         if (g_shot_path && frames == g_shot_frame) fprintf(stderr, "screenshot saved to %s (frame %d)\n", p, frames);
     }
+#ifdef POPTB_WEB
+    web_present(w, h);
+#endif
 }
 static void set_size(int w, int h) {
     if (w == tex_w && h == tex_h && rgba) return;
